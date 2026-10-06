@@ -419,6 +419,16 @@
   }
 }
 
+.dots {
+  display: flex;
+  gap: 3px;
+  flex: none;
+}
+
+.dot.absent {
+  visibility: hidden;
+}
+
 .dot {
   width: 10px;
   height: 10px;

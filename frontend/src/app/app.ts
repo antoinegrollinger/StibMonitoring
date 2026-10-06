@@ -1,15 +1,18 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, ElementRef, Injector, afterNextRender, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { EMPTY, catchError, distinctUntilChanged, interval, of, switchMap, tap } from 'rxjs';
+import { EMPTY, Observable, catchError, combineLatest, distinctUntilChanged, forkJoin, interval, map, of, switchMap, tap } from 'rxjs';
 import { lineColor, routeColor } from './colors';
 import { ControlReport } from './control-report';
+import { DirectionMerge } from './direction-merge';
 import { LineMap } from './line-map';
 import { LineSelection } from './line-selection';
 import { I18n, LANGUAGES, Lang, Translatable } from './i18n';
 import { RefreshSettings } from './refresh';
 import { ThemeSettings } from './theme';
-import { LineMessage, LiveLineStops, LiveStop, StopRef, TicketControl, WaitingTime, directionKey } from './stib.models';
+import {
+  LineMessage, LiveLineStops, LiveStop, MergedLiveLine, MergedStop, StopRef, TicketControl, WaitingTime, directionKey,
+} from './stib.models';
 import { StibService } from './stib.service';
 import { WaitingTimes } from './waiting-times';
 
@@ -17,10 +20,17 @@ function isRateLimited(error: unknown): boolean {
   return error instanceof HttpErrorResponse && error.status === 429;
 }
 
+/** Sidebar key of a line's merged stop list, alongside the `line/direction` keys of its directions. */
+function mergedKey(lineId: string): string {
+  return `${lineId}/*`;
+}
+
 /** Directions of one line, as shown in a sidebar group. */
 interface LineGroup {
   lineId: string;
   directions: LiveLineStops[];
+  /** The line's stops with its directions merged, when directions are merged. */
+  merged: MergedStop[] | null;
   vehicleCount: number;
   messageCount: number;
 }
@@ -37,6 +47,7 @@ export class App {
   protected readonly languages = LANGUAGES;
   protected readonly refresh = inject(RefreshSettings);
   protected readonly lines = inject(LineSelection);
+  protected readonly merge = inject(DirectionMerge);
   protected readonly theme = inject(ThemeSettings);
   protected readonly themeOptions = [
     { theme: 'system', icon: '◐', label: 'theme.system' },
@@ -47,6 +58,8 @@ export class App {
   private readonly injector = inject(Injector);
 
   protected readonly directions = signal<LiveLineStops[]>([]);
+  /** The same lines with their directions merged; null when directions are not merged. */
+  protected readonly mergedLines = signal<MergedLiveLine[] | null>(null);
   /** Lines the current `directions` were loaded for; re-frames the map when it changes. */
   protected readonly loadedKey = signal<string | null>(null);
   protected readonly loading = signal(false);
@@ -76,6 +89,9 @@ export class App {
   protected readonly soloDirections = signal<ReadonlyMap<string, string>>(new Map());
   /** Directions (`line/direction`) hidden from the map because another direction of their line is shown alone. */
   protected readonly hiddenDirections = computed(() => {
+    if (this.mergedLines()) {
+      return new Set<string>(); // the eye toggles are per direction, which a merged list does not show
+    }
     const solo = this.soloDirections();
     return new Set(this.directions().map(directionKey)
       .filter(key => { const only = solo.get(key.split('/')[0]); return only !== undefined && only !== key; }));
@@ -97,9 +113,11 @@ export class App {
     for (const direction of this.directions()) {
       byLine.set(direction.lineId, [...(byLine.get(direction.lineId) ?? []), direction]);
     }
+    const merged = new Map(this.mergedLines()?.map(line => [line.lineId, line.stops]));
     return [...byLine].map(([lineId, directions]) => ({
       lineId,
       directions,
+      merged: merged.get(lineId) ?? null,
       vehicleCount: directions.reduce((n, d) => n + d.stops.filter(s => s.vehiclePresent).length, 0),
       messageCount: this.messages().filter(m => m.lineIds.includes(lineId)).length,
     }));
@@ -127,29 +145,49 @@ export class App {
     } : null;
   });
 
+  /** Platforms of the selected stop: with merged directions, those of every direction; otherwise just the one. */
+  protected readonly selectedPlatformIds = computed(() => {
+    const ref = this.selectedStop();
+    if (!ref) {
+      return [];
+    }
+    const merged = this.mergedLines()?.find(line => line.lineId === ref.lineId)?.stops
+      .find(stop => stop.platforms.some(p => p.stopId === ref.stopId));
+    return merged ? this.platformIds(merged) : [ref.stopId];
+  });
+
   /** Messages about the selected stop on its line, plus that line's line-wide ones. */
   protected readonly selectedStopMessages = computed(() => {
     const ref = this.selectedStop();
+    const platforms = this.selectedPlatformIds();
     return ref === null ? [] : this.messages().filter(m => m.lineIds.includes(ref.lineId)
-      && (m.affectedStopIds.length === 0 || m.affectedStopIds.includes(ref.stopId)));
+      && (m.affectedStopIds.length === 0 || m.affectedStopIds.some(id => platforms.includes(id))));
   });
+
+  /** Controls reported at any platform of the selected stop, most recent first. */
+  protected readonly selectedStopControls = computed(() => this.selectedPlatformIds()
+    .flatMap(id => this.controlsByStop().get(id) ?? [])
+    .sort((a, b) => Date.parse(b.reportedAt) - Date.parse(a.reportedAt)));
 
   constructor() {
     const lineIds$ = toObservable(this.lines.lineIds).pipe(
       distinctUntilChanged((a, b) => a.join(',') === b.join(',')));
 
-    // Reload immediately when the lines change, then on every refresh tick for fresh vehicle positions.
-    lineIds$
+    // Reload immediately when the lines (or the merge setting) change, then on every refresh tick
+    // for fresh vehicle positions.
+    combineLatest([lineIds$, toObservable(this.merge.merged)])
       .pipe(
         tap(() => {
           this.directions.set([]);
+          this.mergedLines.set(null);
           this.error.set(null);
         }),
-        switchMap(lineIds => lineIds.length === 0 ? EMPTY : this.refresh.ticks().pipe(
+        switchMap(([lineIds, merged]) => lineIds.length === 0 ? EMPTY : this.refresh.ticks().pipe(
           tap(() => this.loading.set(true)),
-          switchMap(() => this.stib.getLiveStops(lineIds).pipe(
-            tap(directions => {
+          switchMap(() => this.loadLines(lineIds, merged).pipe(
+            tap(({ directions, mergedLines }) => {
               this.directions.set(directions);
+              this.mergedLines.set(mergedLines);
               this.loadedKey.set(lineIds.join(','));
               this.lastUpdated.set(new Date());
               this.error.set(directions.length ? null : { key: 'error.noData', params: { line: lineIds.join(', ') } });
@@ -165,16 +203,18 @@ export class App {
       )
       .subscribe();
 
-    // Load waiting times for the selected stop and keep them fresh while it stays selected.
-    toObservable(this.selectedStop)
+    // Load waiting times for the selected stop (all its platforms when directions are merged) and
+    // keep them fresh while it stays selected.
+    toObservable(this.selectedPlatformIds)
       .pipe(
-        distinctUntilChanged((a, b) => a?.stopId === b?.stopId),
+        distinctUntilChanged((a, b) => a.join(',') === b.join(',')),
         tap(() => {
           this.waitingTimes.set(null);
           this.waitingTimesError.set(null);
         }),
-        switchMap(ref => ref === null ? of(null) : this.refresh.ticks().pipe(
-          switchMap(() => this.stib.getWaitingTimes(ref.stopId).pipe(
+        switchMap(stopIds => stopIds.length === 0 ? of(null) : this.refresh.ticks().pipe(
+          switchMap(() => forkJoin(stopIds.map(id => this.stib.getWaitingTimes(id))).pipe(
+            map(times => times.flat()),
             tap(times => {
               this.waitingTimes.set(times);
               this.waitingTimesError.set(null);
@@ -189,11 +229,12 @@ export class App {
       )
       .subscribe();
 
-    // Service messages for the lines (cached by the backend); on failure keep showing the previous ones.
+    // Service messages for the lines, reloaded at the backend's cache pace (5 min by default) rather
+    // than on every refresh; on failure keep showing the previous ones.
     lineIds$
       .pipe(
         tap(() => this.messages.set([])),
-        switchMap(lineIds => lineIds.length === 0 ? EMPTY : this.refresh.ticks().pipe(
+        switchMap(lineIds => lineIds.length === 0 ? EMPTY : this.refresh.slowTicks().pipe(
           switchMap(() => this.stib.getLineMessages(lineIds).pipe(
             tap(messages => this.messages.set(messages)),
             catchError(() => of(null)),
@@ -227,8 +268,58 @@ export class App {
     interval(10_000).pipe(takeUntilDestroyed()).subscribe(() => this.now.set(Date.now()));
   }
 
-  protected addControl(control: TicketControl): void {
-    this.controls.update(controls => [control, ...controls.filter(c => c.id !== control.id)]);
+  protected addControls(added: TicketControl[]): void {
+    const ids = new Set(added.map(c => c.id));
+    this.controls.update(controls => [...added, ...controls.filter(c => !ids.has(c.id))]);
+  }
+
+  private loadLines(lineIds: string[], merged: boolean):
+    Observable<{ directions: LiveLineStops[]; mergedLines: MergedLiveLine[] | null }> {
+    return merged
+      ? this.stib.getMergedLiveStops(lineIds).pipe(
+        map(lines => ({ directions: lines.flatMap(line => line.directions), mergedLines: lines })))
+      : this.stib.getLiveStops(lineIds).pipe(map(directions => ({ directions, mergedLines: null })));
+  }
+
+  protected platformIds(stop: MergedStop): string[] {
+    return [...new Set(stop.platforms.map(p => p.stopId))];
+  }
+
+  /** The platform of a merged stop in one direction, if that direction serves it. */
+  protected platformIn(stop: MergedStop, direction: LiveLineStops) {
+    return stop.platforms.find(p => p.direction === direction.direction);
+  }
+
+  protected hasVehicle(stop: MergedStop): boolean {
+    return stop.platforms.some(p => p.vehiclePresent);
+  }
+
+  protected hasMessage(lineId: string, stopIds: string[]): boolean {
+    return stopIds.some(id => this.stopsWithMessages().has(`${lineId}:${id}`));
+  }
+
+  /** Most recent control at any of the given platforms. */
+  protected latestControl(stopIds: string[]): TicketControl | undefined {
+    return stopIds.flatMap(id => this.controlsByStop().get(id) ?? [])
+      .sort((a, b) => Date.parse(b.reportedAt) - Date.parse(a.reportedAt))[0];
+  }
+
+  /** "Stockel ⇄ Gare de l'Ouest" */
+  protected mergedTitle(group: LineGroup): string {
+    return group.directions.map(d => this.i18n.name(d.destination) ?? d.direction).join(' ⇄ ');
+  }
+
+  protected isMergedSelected(lineId: string, stop: MergedStop): boolean {
+    const ref = this.selectedStop();
+    return ref?.lineId === lineId && stop.platforms.some(p => p.stopId === ref.stopId);
+  }
+
+  protected isMergedExpanded(lineId: string): boolean {
+    return this.expandedDirections().has(mergedKey(lineId));
+  }
+
+  protected toggleMerged(lineId: string): void {
+    this.toggleExpanded(mergedKey(lineId));
   }
 
   protected colorOf(lineId: string, directionIndex = 0): string {
@@ -281,7 +372,8 @@ export class App {
 
   protected setAllExpanded(expanded: boolean): void {
     this.expandedLines.set(new Set(expanded ? this.groups().map(g => g.lineId) : []));
-    this.expandedDirections.set(new Set(expanded ? this.directions().map(directionKey) : []));
+    this.expandedDirections.set(new Set(expanded
+      ? [...this.directions().map(directionKey), ...this.groups().map(g => mergedKey(g.lineId))] : []));
   }
 
   protected isDirectionExpanded(direction: LiveLineStops): boolean {
@@ -307,7 +399,10 @@ export class App {
   }
 
   protected toggleDirection(direction: LiveLineStops): void {
-    const key = directionKey(direction);
+    this.toggleExpanded(directionKey(direction));
+  }
+
+  private toggleExpanded(key: string): void {
     this.expandedDirections.update(expanded => {
       const next = new Set(expanded);
       if (!next.delete(key)) {
@@ -333,7 +428,11 @@ export class App {
       this.toggleLine(ref.lineId);
     }
     const direction = this.selection()?.direction;
-    if (direction && !this.isDirectionExpanded(direction)) {
+    if (direction && this.mergedLines()) {
+      if (!this.isMergedExpanded(direction.lineId)) {
+        this.toggleMerged(direction.lineId);
+      }
+    } else if (direction && !this.isDirectionExpanded(direction)) {
       this.toggleDirection(direction);
     }
     // Stops picked on the map may be out of view in the sidebar.

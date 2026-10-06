@@ -28,6 +28,8 @@
     <button type="submit" class="primary">{{ i18n.t('lines.add') }}</button>
     <button type="button" class="toggle" [class.active]="lines.showAll()" [attr.aria-pressed]="lines.showAll()"
             (click)="toggleAllLines()">{{ i18n.t('lines.all') }}</button>
+    <button type="button" class="toggle" [class.active]="merge.merged()" [attr.aria-pressed]="merge.merged()"
+            [title]="i18n.t('lines.mergeHint')" (click)="merge.toggle()">⇄ {{ i18n.t('lines.merge') }}</button>
     @if (lines.lineIds().length) {
       <button type="button" class="toggle" (click)="clearLines()">{{ i18n.t('lines.clear') }}</button>
     }
@@ -120,7 +122,53 @@
             <span class="chevron" aria-hidden="true">{{ isExpanded(group.lineId) ? '▴' : '▾' }}</span>
           </button>
         }
-        @if (isExpanded(group.lineId)) {
+        @if (isExpanded(group.lineId) && group.merged) {
+          <div class="direction">
+            <h2>
+              <button type="button" class="direction-header" [attr.aria-expanded]="isMergedExpanded(group.lineId)"
+                      (click)="toggleMerged(group.lineId)">
+                @for (direction of group.directions; track direction.direction; let i = $index) {
+                  <span class="swatch" [style.background]="colorOf(group.lineId, i)"></span>
+                }
+                {{ mergedTitle(group) }}
+                <span class="chevron" aria-hidden="true">{{ isMergedExpanded(group.lineId) ? '▴' : '▾' }}</span>
+              </button>
+            </h2>
+            @if (isMergedExpanded(group.lineId)) {
+              <ol class="stops">
+                @for (stop of group.merged; track stop.id) {
+                  @let stopIds = platformIds(stop);
+                  <li>
+                    <button type="button"
+                            [class.occupied]="hasVehicle(stop)"
+                            [class.selected]="isMergedSelected(group.lineId, stop)"
+                            [attr.aria-pressed]="isMergedSelected(group.lineId, stop)"
+                            (click)="selectStop({ lineId: group.lineId, stopId: stop.platforms[0].stopId })">
+                      <span class="dots">
+                        @for (direction of group.directions; track direction.direction; let i = $index) {
+                          @let platform = platformIn(stop, direction);
+                          <span class="dot" [class.absent]="!platform"
+                                [title]="'→ ' + (i18n.name(direction.destination) ?? direction.direction)"
+                                [style.border-color]="colorOf(group.lineId, i)"
+                                [style.background]="platform?.vehiclePresent ? colorOf(group.lineId, i) : 'var(--surface)'"></span>
+                        }
+                      </span>
+                      {{ i18n.name(stop.name) ?? stop.id }}
+                      @if (latestControl(stopIds); as control) {
+                        <span class="control-flag" [title]="i18n.t(control.type === 'POLICE' ? 'control.police' : 'control.controllers')">
+                          {{ control.type === 'POLICE' ? '🚓' : '🎫' }}
+                        </span>
+                      }
+                      @if (hasMessage(group.lineId, stopIds)) {
+                        <span class="warning" [title]="i18n.t('messages.stopFlag')">⚠</span>
+                      }
+                    </button>
+                  </li>
+                }
+              </ol>
+            }
+          </div>
+        } @else if (isExpanded(group.lineId)) {
           @for (direction of group.directions; track direction.direction; let i = $index) {
             <div class="direction" [class.hidden-on-map]="!isDirectionShown(direction)">
               <h2>
@@ -201,7 +249,8 @@
                         [allLineIds]="lines.allLineIds()"
                         [selectedStop]="selectedStop()"
                         (stopSelected)="selectStop($event)"
-                        (reported)="addControl($event)" />
+                        [merged]="merge.merged()"
+                        (reported)="addControls($event)" />
     @if (selection(); as selected) {
       <app-waiting-times class="waiting-times"
                          [stop]="selected.stop"
@@ -210,7 +259,7 @@
                          [error]="waitingTimesError()"
                          [now]="now()"
                          [messages]="selectedStopMessages()"
-                         [controls]="controlsByStop().get(selected.stop.id) ?? []"
+                         [controls]="selectedStopControls()"
                          (closed)="selectStop(null)" />
     }
   </div>

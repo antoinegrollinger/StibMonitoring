@@ -13,15 +13,38 @@ stib:
   token: ${STIB-TOKEN:${STIB_TOKEN:}}
   cache:
     # Traveller information (disruption messages) is fetched in one call and reused for this long.
+    # The frontend reloads messages at this pace too (served through /api/config).
     messages-ttl: 5m
     # stopsByLine and StopDetails are static datasets.
     static-ttl: 1h
+    # Vehicle positions and waiting times are reused for this long, so visitors refreshing at the
+    # same time share one STIB call.
+    live-ttl: 5s
 
 frontend:
   # Default auto-refresh interval of the live view (0s disables it). Users can override it in the UI.
   refresh-interval: 15s
+  # Show each line's directions merged into one list of stops by default. Users can override it in the UI.
+  merge-directions: false
 
 controls:
   # Ticket controls reported by travellers are shown for this long, then dropped.
   ttl: 30m
   max-message-length: 280
+
+rate-limit:
+  enabled: true
+  # Every /api call, per client IP. The UI makes up to ~5 calls per refresh, i.e. ~60 per minute
+  # when refreshing every 5 s; the margin covers a second tab or a few users behind one address.
+  requests-per-minute: 180
+  # Ticket control reports, per client IP, on top of the above.
+  reports-per-hour: 10
+  # Behind a proxy, the header holding the client IP (e.g. X-Forwarded-For, or CF-Connecting-IP behind
+  # Cloudflare). Leave empty when clients connect directly: otherwise they could spoof it.
+  client-ip-header:
+
+logging:
+  level:
+    # DEBUG logs every API call (status, duration, client) and every call made to STIB.
+    # Set to INFO to turn this off.
+    be.stib.monitoring: DEBUG

@@ -9,7 +9,9 @@ import java.time.Duration;
  *
  * @param refreshInterval default auto-refresh interval of the live view; zero disables auto-refresh.
  *                        Users can override it in the UI.
+ * @param mergeDirections whether the live view shows each line's directions merged into one list of
+ *                        stops by default. Users can override it in the UI.
  */
 @ConfigurationProperties(prefix = "frontend")
-public record FrontendProperties(Duration refreshInterval) {
+public record FrontendProperties(Duration refreshInterval, boolean mergeDirections) {
 }

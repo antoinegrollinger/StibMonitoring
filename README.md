@@ -74,14 +74,31 @@ and is empty for line-wide messages (including ones that list every stop, such a
 ```sh
 curl -X POST http://localhost:8080/api/stops/8742/controls \
      -H 'Content-Type: application/json' \
-     -d '{"type":"POLICE","lineId":"5","message":"At the exit"}'   # type: POLICE or CONTROLLERS; lineId and message optional
+     -d '{"type":"POLICE","lineId":"5","message":"At the exit","bothDirections":true}'
+     # type: POLICE or CONTROLLERS; lineId, message and bothDirections optional
 curl http://localhost:8080/api/controls                # every active report, most recent first
 ```
 
 Travellers can report a ticket control at a stop, saying whether police are present or only
 ticket controllers, optionally naming the line, with an optional message (`controls.max-message-length`, default 280).
 Reports are kept in memory only and expire after `controls.ttl` (default 30 minutes), so they
-are lost when the backend restarts.
+are lost when the backend restarts. The stop's name and position are attached to each report, so
+the frontend can show it even when none of the stop's lines is displayed.
+
+STIB gives each platform its own stop id. With `bothDirections`, the control is also reported at
+the platform(s) of the same stop in the line's other direction (without `lineId`, the first line
+serving the stop is used); the response lists one report per platform.
+
+### Merged directions
+
+```sh
+curl "http://localhost:8080/api/lines/live/merged?ids=1,5"
+```
+
+Each line once, with its `directions` (as returned by `/live`) and a single list of `stops` in the
+order of the first direction. Each stop groups its `platforms`, one per direction serving it, each
+with its own `vehiclePresent`. Platforms are grouped when they have the same name and lie within
+500 m of each other; stops served in one direction only (branches, loops) appear on their own.
 
 ### Several lines at once
 
@@ -106,7 +123,19 @@ The traveller information dataset has no usable per-line filter, so the backend 
 messages in one call and caches them (`stib.cache.messages-ttl`, default 5 minutes). The static
 `stopsByLine` and `StopDetails` datasets are cached too (`stib.cache.static-ttl`, default 1 hour),
 which keeps the live endpoints down to a single STIB call (vehicle positions) per refresh.
-Caching uses Caffeine through Spring's cache abstraction.
+Real-time data (vehicle positions, and waiting times per stop) is reused for `stib.cache.live-ttl`
+(default 5 s): visitors refreshing at the same time share one STIB call, and concurrent requests
+wait for that call rather than each making their own. Caching uses Caffeine through Spring's cache
+abstraction.
+
+### Rate limiting
+
+Each client IP may make `rate-limit.requests-per-minute` API calls (default 180, in bursts up to
+that many) and `rate-limit.reports-per-hour` ticket control reports (default 10). Beyond that the
+API answers `429 Too Many Requests` with a `Retry-After` header. Behind a reverse proxy, set
+`rate-limit.client-ip-header` (e.g. `X-Forwarded-For`, or `CF-Connecting-IP` behind Cloudflare) so
+clients are told apart by their own address rather than the proxy's; leave it empty otherwise, as
+clients could spoof it. Counters are kept in memory.
 
 ### Auto-refresh
 
@@ -120,6 +149,14 @@ frontend:
 
 Users can override it from the toolbar (Off, 5–60 s, plus a "refresh now" button); their choice
 is remembered per browser. Vehicles, waiting times and service messages all follow it.
+
+Whether the sidebar merges each line's directions is set the same way, with a "Merge directions"
+toggle in the toolbar overriding it per browser:
+
+```yaml
+frontend:
+  merge-directions: false
+```
 
 ## Frontend
 

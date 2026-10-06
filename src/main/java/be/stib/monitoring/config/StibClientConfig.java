@@ -1,5 +1,6 @@
 package be.stib.monitoring.config;
 
+import be.stib.monitoring.client.StibCallLogger;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.util.StringUtils;
@@ -20,6 +21,7 @@ public class StibClientConfig {
         return builder
                 .baseUrl(properties.baseUrl())
                 .defaultHeader(PARTNER_KEY_HEADER, properties.token())
+                .requestInterceptor(new StibCallLogger())
                 .build();
     }
 }

@@ -5,6 +5,7 @@ import be.stib.monitoring.config.ClockConfig;
 import be.stib.monitoring.config.ControlProperties;
 import be.stib.monitoring.model.LocalizedName;
 import be.stib.monitoring.model.StopDetails;
+import be.stib.monitoring.service.LineStopsService;
 import be.stib.monitoring.service.TicketControlService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,6 +41,9 @@ class TicketControlControllerTest {
     @MockitoBean
     StibClient stibClient;
 
+    @MockitoBean
+    LineStopsService lineStops;
+
     @BeforeEach
     void stops() {
         when(stibClient.getAllStopDetails()).thenReturn(Map.of("8042",
@@ -52,8 +56,8 @@ class TicketControlControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"type\":\"POLICE\",\"lineId\":\"5\",\"message\":\"At the exit\"}"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.stopId").value("8042"))
-                .andExpect(jsonPath("$.type").value("POLICE"));
+                .andExpect(jsonPath("$[0].stopId").value("8042"))
+                .andExpect(jsonPath("$[0].type").value("POLICE"));
 
         mvc.perform(get("/api/controls"))
                 .andExpect(status().isOk())

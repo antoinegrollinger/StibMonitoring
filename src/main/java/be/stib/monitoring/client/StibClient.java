@@ -71,8 +71,10 @@ public class StibClient {
 
     /**
      * Calls {@code GET /rt/VehiclePositions/} for the whole network (a single small response)
-     * and groups the vehicles by line id.
+     * and groups the vehicles by line id. Cached briefly ({@code stib.cache.live-ttl}); concurrent
+     * callers wait for a single STIB call.
      */
+    @Cacheable(cacheNames = CacheConfig.VEHICLE_POSITIONS, sync = true)
     public Map<String, List<VehiclePosition>> getAllVehiclePositions() {
         VehiclePositionsResponse response = get("/rt/VehiclePositions/", null,
                 VehiclePositionsResponse.class, "vehicle positions");
@@ -91,7 +93,11 @@ public class StibClient {
                         (a, b) -> Stream.concat(a.stream(), b.stream()).toList()));
     }
 
-    /** Calls {@code GET /rt/WaitingTimes/?where=pointid=<stopId>}; returns all lines, soonest first. */
+    /**
+     * Calls {@code GET /rt/WaitingTimes/?where=pointid=<stopId>}; returns all lines, soonest first.
+     * Cached briefly per stop ({@code stib.cache.live-ttl}); concurrent callers wait for a single STIB call.
+     */
+    @Cacheable(cacheNames = CacheConfig.WAITING_TIMES, sync = true)
     public List<WaitingTime> getWaitingTimes(String stopId) {
         WaitingTimesResponse response = get("/rt/WaitingTimes/", "pointid=" + stopId,
                 WaitingTimesResponse.class, "waiting times for stop " + stopId);

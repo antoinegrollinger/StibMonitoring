@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,8 +48,10 @@ class TicketControlServiceTest {
 
     private final StibClient stibClient = mock(StibClient.class);
 
+    private final LineStopsService lineStops = mock(LineStopsService.class);
+
     private final TicketControlService service =
-            new TicketControlService(new ControlProperties(Duration.ofMinutes(30), 10), stibClient, clock);
+            new TicketControlService(new ControlProperties(Duration.ofMinutes(30), 10), stibClient, lineStops, clock);
 
     {
         when(stibClient.getAllStopDetails()).thenReturn(Map.of("8042", STOP));
@@ -56,12 +59,24 @@ class TicketControlServiceTest {
 
     @Test
     void attachesTheStopDetails() {
-        assertThat(service.report("8042", null, ControlType.POLICE, null).stop()).isEqualTo(STOP);
+        assertThat(service.report("8042", null, ControlType.POLICE, null, false).getFirst().stop()).isEqualTo(STOP);
+    }
+
+    @Test
+    void reportsBothDirectionsOnRequest() {
+        when(stibClient.getAllStopDetails()).thenReturn(Map.of("8042", STOP, "8041", STOP));
+        when(lineStops.getSameStopPlatforms("5", "8042")).thenReturn(List.of("8041", "8042"));
+
+        List<TicketControl> reported = service.report("8042", "5", ControlType.CONTROLLERS, "exit", true);
+
+        assertThat(reported).extracting(TicketControl::stopId).containsExactly("8042", "8041");
+        assertThat(reported).extracting(TicketControl::message).containsOnly("exit");
+        assertThat(service.active()).hasSize(2);
     }
 
     @Test
     void rejectsUnknownStops() {
-        assertThatThrownBy(() -> service.report("9999", null, ControlType.POLICE, null))
+        assertThatThrownBy(() -> service.report("9999", null, ControlType.POLICE, null, false))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -69,7 +84,7 @@ class TicketControlServiceTest {
     void keepsTheReportWhenStopDetailsCannotBeLoaded() {
         when(stibClient.getAllStopDetails()).thenThrow(new StibApiException("down", null));
 
-        TicketControl control = service.report("9999", null, ControlType.POLICE, null);
+        TicketControl control = service.report("9999", null, ControlType.POLICE, null, false).getFirst();
 
         assertThat(control.stop()).isNull();
         assertThat(service.active()).containsExactly(control);
@@ -77,7 +92,7 @@ class TicketControlServiceTest {
 
     @Test
     void keepsReportsUntilTheyExpire() {
-        TicketControl control = service.report("8042", null, ControlType.POLICE, null);
+        TicketControl control = service.report("8042", null, ControlType.POLICE, null, false).getFirst();
 
         assertThat(control.expiresAt()).isEqualTo(now.plus(Duration.ofMinutes(30)));
         assertThat(service.active()).containsExactly(control);
@@ -88,31 +103,31 @@ class TicketControlServiceTest {
 
     @Test
     void listsTheMostRecentReportFirst() {
-        TicketControl first = service.report("8042", null, ControlType.CONTROLLERS, null);
+        TicketControl first = service.report("8042", null, ControlType.CONTROLLERS, null, false).getFirst();
         now = now.plusSeconds(60);
-        TicketControl second = service.report("8042", null, ControlType.POLICE, null);
+        TicketControl second = service.report("8042", null, ControlType.POLICE, null, false).getFirst();
 
         assertThat(service.active()).containsExactly(second, first);
     }
 
     @Test
     void stripsTheMessageAndDropsBlankOnes() {
-        assertThat(service.report("8042", null, ControlType.POLICE, "  exit A ").message()).isEqualTo("exit A");
-        assertThat(service.report("8042", null, ControlType.POLICE, "   ").message()).isNull();
+        assertThat(service.report("8042", null, ControlType.POLICE, "  exit A ", false).getFirst().message()).isEqualTo("exit A");
+        assertThat(service.report("8042", null, ControlType.POLICE, "   ", false).getFirst().message()).isNull();
     }
 
     @Test
     void keepsTheOptionalLine() {
-        assertThat(service.report("8042", " t7 ", ControlType.POLICE, null).lineId()).isEqualTo("T7");
-        assertThat(service.report("8042", "", ControlType.POLICE, null).lineId()).isNull();
-        assertThatThrownBy(() -> service.report("8042", "1/2", ControlType.POLICE, null))
+        assertThat(service.report("8042", " t7 ", ControlType.POLICE, null, false).getFirst().lineId()).isEqualTo("T7");
+        assertThat(service.report("8042", "", ControlType.POLICE, null, false).getFirst().lineId()).isNull();
+        assertThatThrownBy(() -> service.report("8042", "1/2", ControlType.POLICE, null, false))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void rejectsMissingTypeAndTooLongMessages() {
-        assertThatThrownBy(() -> service.report("8042", null, null, null)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.report("8042", null, ControlType.POLICE, "x".repeat(11)))
+        assertThatThrownBy(() -> service.report("8042", null, null, null, false)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.report("8042", null, ControlType.POLICE, "x".repeat(11), false))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThat(service.active()).isEmpty();
     }

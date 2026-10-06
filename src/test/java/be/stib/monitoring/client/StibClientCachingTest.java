@@ -33,7 +33,7 @@ class StibClientCachingTest {
         @Bean
         StibProperties stibProperties() {
             return new StibProperties("https://stib.test/api", "t",
-                    new StibProperties.Cache(Duration.ofMinutes(5), Duration.ofHours(1)));
+                    new StibProperties.Cache(Duration.ofMinutes(5), Duration.ofHours(1), Duration.ofMillis(200)));
         }
 
         @Bean
@@ -65,5 +65,19 @@ class StibClientCachingTest {
 
         server.verify();
         assertThat(client.getTravellersInformation()).hasSize(1);
+    }
+
+    @Test
+    void reusesLiveDataWhileItIsFreshThenFetchesItAgain() throws InterruptedException {
+        server.expect(ExpectedCount.times(2), requestTo("https://stib.test/api/rt/VehiclePositions/"))
+                .andRespond(withSuccess("{\"results\":[{\"lineid\":\"1\",\"vehiclepositions\":[]}]}",
+                        MediaType.APPLICATION_JSON));
+
+        client.getAllVehiclePositions();
+        client.getAllVehiclePositions(); // within the 200 ms live TTL: served from the cache
+        Thread.sleep(300);
+        client.getAllVehiclePositions();
+
+        server.verify();
     }
 }

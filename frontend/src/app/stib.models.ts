@@ -69,9 +69,39 @@ export interface TicketControl {
   expiresAt: string;
 }
 
+/** One direction's platform of a merged stop. */
+export interface MergedPlatform {
+  direction: string;
+  stopId: string;
+  vehiclePresent: boolean;
+}
+
+/** A stop of a line with its directions merged: one platform per direction serving it. */
+export interface MergedStop {
+  /** Id of the first platform, usable as a key. */
+  id: string;
+  name: LocalizedName | null;
+  latitude: number | null;
+  longitude: number | null;
+  platforms: MergedPlatform[];
+}
+
+/** A line with its directions merged, as returned by GET /api/lines/live/merged?ids=... */
+export interface MergedLiveLine {
+  lineId: string;
+  /** The per-direction view, as returned by GET /api/lines/live. */
+  directions: LiveLineStops[];
+  /** Stops in the order of the first direction. */
+  stops: MergedStop[];
+}
+
 /** Frontend settings from GET /api/config. */
 export interface FrontendConfig {
   refreshIntervalSeconds: number;
+  /** Whether directions are merged by default. */
+  mergeDirections: boolean;
+  /** How often to reload traveller messages; the backend caches them this long. */
+  messagesRefreshSeconds: number;
 }
 
 /** Identifies one direction of one line, e.g. `1/V`. */

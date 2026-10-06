@@ -28,12 +28,15 @@ public class TicketControlService {
 
     private final ControlProperties properties;
     private final StibClient stibClient;
+    private final LineStopsService lineStops;
     private final Clock clock;
     private final List<TicketControl> controls = new ArrayList<>();
 
-    public TicketControlService(ControlProperties properties, StibClient stibClient, Clock clock) {
+    public TicketControlService(ControlProperties properties, StibClient stibClient, LineStopsService lineStops,
+                                Clock clock) {
         this.properties = properties;
         this.stibClient = stibClient;
+        this.lineStops = lineStops;
         this.clock = clock;
     }
 
@@ -42,10 +45,15 @@ public class TicketControlService {
      * up in STIB's (cached) stop dataset; if that dataset cannot be loaded the report is still kept,
      * without them.
      *
+     * @param bothDirections also report the control at the platforms serving the same stop in the
+     *                       other direction(s) of the line (or, without a line, of the first line
+     *                       serving the stop)
+     * @return one report per platform, the requested one first
      * @throws IllegalArgumentException when the stop is unknown, the type is missing, the line id is
      *                                  malformed or the message is too long
      */
-    public TicketControl report(String stopId, String lineId, ControlType type, String message) {
+    public List<TicketControl> report(String stopId, String lineId, ControlType type, String message,
+                                      boolean bothDirections) {
         if (type == null) {
             throw new IllegalArgumentException("type is required");
         }
@@ -57,30 +65,43 @@ public class TicketControlService {
         if (text != null && text.length() > properties.maxMessageLength()) {
             throw new IllegalArgumentException("message must be at most " + properties.maxMessageLength() + " characters");
         }
-        StopDetails stop = stopDetails(stopId);
+        Map<String, StopDetails> details = stopDetails();
+        if (details != null && !details.containsKey(stopId)) {
+            throw new IllegalArgumentException("unknown stop " + stopId);
+        }
+        List<String> stopIds = new ArrayList<>(List.of(stopId));
+        if (bothDirections) {
+            platforms(line, stopId).stream().filter(id -> !id.equals(stopId)).forEach(stopIds::add);
+        }
         synchronized (this) {
             Instant now = clock.instant();
-            TicketControl control = new TicketControl(
-                    UUID.randomUUID().toString(), stopId, stop, line, type, text, now, now.plus(properties.ttl()));
+            List<TicketControl> reported = stopIds.stream()
+                    .map(id -> new TicketControl(UUID.randomUUID().toString(), id,
+                            details == null ? null : details.get(id), line, type, text,
+                            now, now.plus(properties.ttl())))
+                    .toList();
             purgeExpired(now);
-            controls.add(control);
-            return control;
+            controls.addAll(reported);
+            return reported;
         }
     }
 
-    /** Called outside the lock: the first call may fetch the dataset from STIB. */
-    private StopDetails stopDetails(String stopId) {
-        Map<String, StopDetails> details;
+    /** Platforms of the same stop; just the stop itself if STIB's line data cannot be loaded. */
+    private List<String> platforms(String lineId, String stopId) {
         try {
-            details = stibClient.getAllStopDetails();
+            return lineStops.getSameStopPlatforms(lineId, stopId);
+        } catch (StibApiException e) {
+            return List.of(stopId);
+        }
+    }
+
+    /** STIB's stop dataset, or null if it cannot be loaded. Called outside the lock: the first call may fetch it. */
+    private Map<String, StopDetails> stopDetails() {
+        try {
+            return stibClient.getAllStopDetails();
         } catch (StibApiException e) {
             return null;
         }
-        StopDetails stop = details.get(stopId);
-        if (stop == null) {
-            throw new IllegalArgumentException("unknown stop " + stopId);
-        }
-        return stop;
     }
 
     /** Reports that have not expired yet, most recent first. */

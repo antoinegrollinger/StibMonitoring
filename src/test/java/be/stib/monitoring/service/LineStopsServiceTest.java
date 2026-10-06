@@ -4,6 +4,7 @@ import be.stib.monitoring.client.StibClient;
 import be.stib.monitoring.model.LineMessage;
 import be.stib.monitoring.model.LineStops;
 import be.stib.monitoring.model.LiveLineStops;
+import be.stib.monitoring.model.MergedLiveLine;
 import be.stib.monitoring.model.LocalizedName;
 import be.stib.monitoring.model.LocalizedText;
 import be.stib.monitoring.model.StopDetails;
@@ -109,6 +110,48 @@ class LineStopsServiceTest {
         assertThat(messages.get(0).lineIds()).containsExactly("1", "5");
         assertThat(messages.get(0).affectedStopIds()).containsExactly("B");
         assertThat(messages.get(1).affectedStopIds()).containsExactly("A", "E");
+    }
+
+    @Test
+    void mergesTheDirectionsOfALineWithTheVehiclesOfBoth() {
+        givenLine7WithTwoDirections();
+        when(client.getAllVehiclePositions()).thenReturn(Map.of("7", List.of(
+                new VehiclePosition("C", "A7", 0),     // going to C, at A
+                new VehiclePosition("A", "C8", 0))));  // coming back, at C
+
+        MergedLiveLine line = service.getMergedLiveStopsByLines(List.of("7")).getFirst();
+
+        assertThat(line.directions()).hasSize(2);
+        assertThat(line.stops()).extracting(MergedLiveLine.Stop::id).containsExactly("A7", "B7", "C7");
+        assertThat(line.stops().getFirst().platforms()).containsExactly(
+                new MergedLiveLine.Platform("V", "A7", true), new MergedLiveLine.Platform("F", "A8", false));
+        assertThat(line.stops().getLast().platforms()).containsExactly(
+                new MergedLiveLine.Platform("V", "C7", false), new MergedLiveLine.Platform("F", "C8", true));
+    }
+
+    @Test
+    void findsThePlatformsOfTheSameStopInBothDirections() {
+        givenLine7WithTwoDirections();
+
+        assertThat(service.getSameStopPlatforms("7", "B8")).containsExactly("B7", "B8");
+        assertThat(service.getSameStopPlatforms(null, "B8")).containsExactly("B7", "B8");
+        assertThat(service.getSameStopPlatforms(null, "NOWHERE")).containsExactly("NOWHERE");
+    }
+
+    /** Line 7: A -> B -> C (platforms A7, B7, C7) and back (C8, B8, A8), ~20 m from the first ones. */
+    private void givenLine7WithTwoDirections() {
+        when(client.getAllStopsByLine()).thenReturn(Map.of("7", List.of(
+                new LineStops("7", "V", new LocalizedName("C", "C"),
+                        List.of(new LineStops.Stop("A7", 1), new LineStops.Stop("B7", 2), new LineStops.Stop("C7", 3))),
+                new LineStops("7", "F", new LocalizedName("A", "A"),
+                        List.of(new LineStops.Stop("C8", 1), new LineStops.Stop("B8", 2), new LineStops.Stop("A8", 3))))));
+        when(client.getAllStopDetails()).thenReturn(Map.of(
+                "A7", named("A7", "A", 50.800, 4.35), "B7", named("B7", "B", 50.809, 4.35), "C7", named("C7", "C", 50.818, 4.35),
+                "A8", named("A8", "A", 50.800, 4.3503), "B8", named("B8", "B", 50.809, 4.3503), "C8", named("C8", "C", 50.818, 4.3503)));
+    }
+
+    private static StopDetails named(String id, String name, double latitude, double longitude) {
+        return new StopDetails(id, new LocalizedName(name, name), latitude, longitude);
     }
 
     private List<Boolean> presence(String lineId) {

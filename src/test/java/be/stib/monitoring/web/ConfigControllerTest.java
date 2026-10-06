@@ -1,6 +1,7 @@
 package be.stib.monitoring.web;
 
 import be.stib.monitoring.config.FrontendProperties;
+import be.stib.monitoring.config.StibProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -15,10 +16,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(ConfigController.class)
 @Import(ConfigControllerTest.Config.class)
-@TestPropertySource(properties = "frontend.refresh-interval=30s")
+@TestPropertySource(properties = {"frontend.refresh-interval=30s", "frontend.merge-directions=true",
+        "stib.cache.messages-ttl=5m"})
 class ConfigControllerTest {
 
-    @EnableConfigurationProperties(FrontendProperties.class)
+    @EnableConfigurationProperties({FrontendProperties.class, StibProperties.class})
     static class Config {
     }
 
@@ -29,6 +31,8 @@ class ConfigControllerTest {
     void exposesTheConfiguredRefreshIntervalInSeconds() throws Exception {
         mvc.perform(get("/api/config"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.refreshIntervalSeconds").value(30));
+                .andExpect(jsonPath("$.refreshIntervalSeconds").value(30))
+                .andExpect(jsonPath("$.mergeDirections").value(true))
+                .andExpect(jsonPath("$.messagesRefreshSeconds").value(300));
     }
 }

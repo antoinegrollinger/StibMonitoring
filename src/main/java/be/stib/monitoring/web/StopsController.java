@@ -4,6 +4,7 @@ import be.stib.monitoring.model.LineMessage;
 import be.stib.monitoring.model.LineStopDetails;
 import be.stib.monitoring.model.LineStops;
 import be.stib.monitoring.model.LiveLineStops;
+import be.stib.monitoring.model.MergedLiveLine;
 import be.stib.monitoring.service.LineStopsService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,6 +34,12 @@ public class StopsController {
     @GetMapping("/live")
     public List<LiveLineStops> liveStops(@RequestParam List<String> ids) {
         return lineStopsService.getLiveStopsByLines(ids);
+    }
+
+    /** Like {@link #liveStops(List)}, with each line's directions merged into one list of stops. */
+    @GetMapping("/live/merged")
+    public List<MergedLiveLine> mergedLiveStops(@RequestParam List<String> ids) {
+        return lineStopsService.getMergedLiveStopsByLines(ids);
     }
 
     /** Service messages for several lines at once, each message listed once. */

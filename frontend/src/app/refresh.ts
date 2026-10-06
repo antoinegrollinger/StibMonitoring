@@ -5,6 +5,7 @@ import { StibService } from './stib.service';
 
 /** Used until the backend's configured default arrives. */
 const FALLBACK_INTERVAL_SECONDS = 15;
+const FALLBACK_MESSAGES_INTERVAL_SECONDS = 300;
 const PRESET_INTERVALS_SECONDS = [0, 5, 10, 15, 30, 60];
 const STORAGE_KEY = 'stib-monitoring.refreshSeconds';
 
@@ -17,6 +18,8 @@ const STORAGE_KEY = 'stib-monitoring.refreshSeconds';
 export class RefreshSettings {
   private readonly userChoice = signal<number | null>(storedChoice());
   private readonly serverDefault = signal<number | null>(null);
+  /** How often slowly changing data (traveller messages) is reloaded, from the backend. */
+  private readonly slowIntervalSeconds = signal(FALLBACK_MESSAGES_INTERVAL_SECONDS);
   private readonly manual = new Subject<void>();
 
   readonly intervalSeconds = computed(() =>
@@ -29,10 +32,18 @@ export class RefreshSettings {
   });
 
   private readonly interval$ = toObservable(this.intervalSeconds);
+  /** Off when auto-refresh is off; never faster than the regular interval. */
+  private readonly slowInterval$ = toObservable(computed(() =>
+    this.intervalSeconds() > 0 ? Math.max(this.intervalSeconds(), this.slowIntervalSeconds()) : 0));
 
   constructor() {
     inject(StibService).getConfig().subscribe({
-      next: config => this.serverDefault.set(Math.max(0, config.refreshIntervalSeconds)),
+      next: config => {
+        this.serverDefault.set(Math.max(0, config.refreshIntervalSeconds));
+        if (config.messagesRefreshSeconds > 0) {
+          this.slowIntervalSeconds.set(config.messagesRefreshSeconds);
+        }
+      },
       error: () => { /* keep the fallback */ },
     });
   }
@@ -55,9 +66,18 @@ export class RefreshSettings {
    * interval restarts the timer without an extra immediate load.
    */
   ticks(): Observable<unknown> {
+    return this.ticksEvery(this.interval$);
+  }
+
+  /** Like {@link ticks}, at the slower pace of data that rarely changes (traveller messages). */
+  slowTicks(): Observable<unknown> {
+    return this.ticksEvery(this.slowInterval$);
+  }
+
+  private ticksEvery(seconds$: Observable<number>): Observable<unknown> {
     return merge(
       of(null),
-      this.interval$.pipe(switchMap(seconds => seconds > 0 ? interval(seconds * 1000) : EMPTY)),
+      seconds$.pipe(switchMap(seconds => seconds > 0 ? interval(seconds * 1000) : EMPTY)),
       this.manual,
     );
   }

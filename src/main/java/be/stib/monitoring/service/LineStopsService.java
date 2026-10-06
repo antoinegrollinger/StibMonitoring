@@ -5,6 +5,7 @@ import be.stib.monitoring.model.LineMessage;
 import be.stib.monitoring.model.LineStopDetails;
 import be.stib.monitoring.model.LineStops;
 import be.stib.monitoring.model.LiveLineStops;
+import be.stib.monitoring.model.MergedLiveLine;
 import be.stib.monitoring.model.StopDetails;
 import be.stib.monitoring.model.TravellerMessage;
 import be.stib.monitoring.model.VehiclePosition;
@@ -82,6 +83,60 @@ public class LineStopsService {
                                     .toList());
                 })
                 .toList();
+    }
+
+    /**
+     * Live view of the given lines with each line's directions merged: the platforms serving the
+     * same stop in either direction are grouped, so a stop shows the vehicles of both directions.
+     */
+    public List<MergedLiveLine> getMergedLiveStopsByLines(Collection<String> lineIds) {
+        List<LiveLineStops> live = getLiveStopsByLines(lineIds);
+        Map<String, Set<String>> occupiedByLine = live.stream().collect(Collectors.groupingBy(LiveLineStops::lineId,
+                Collectors.flatMapping(d -> d.stops().stream().filter(LiveLineStops.Stop::vehiclePresent)
+                        .map(LiveLineStops.Stop::id), Collectors.toSet())));
+        Map<String, List<LineStopDetails>> detailsByLine = getStopDetailsByLines(lineIds).stream()
+                .collect(Collectors.groupingBy(LineStopDetails::lineId));
+        return live.stream()
+                .map(LiveLineStops::lineId)
+                .distinct()
+                .map(lineId -> {
+                    Set<String> occupied = occupiedByLine.get(lineId);
+                    List<MergedLiveLine.Stop> stops = DirectionMerger.merge(detailsByLine.get(lineId)).stream()
+                            .map(group -> {
+                                LineStopDetails.Stop first = group.getFirst().stop();
+                                return new MergedLiveLine.Stop(first.id(), first.name(), first.latitude(),
+                                        first.longitude(), group.stream()
+                                        .map(p -> new MergedLiveLine.Platform(p.direction(), p.stop().id(),
+                                                occupied.contains(p.stop().id())))
+                                        .toList());
+                            })
+                            .toList();
+                    return new MergedLiveLine(lineId,
+                            live.stream().filter(d -> d.lineId().equals(lineId)).toList(), stops);
+                })
+                .toList();
+    }
+
+    /**
+     * Ids of the platforms serving the same stop as {@code stopId} on a line, in every direction
+     * (including {@code stopId} itself). Without a line, the first line serving the stop is used.
+     * Just {@code stopId} when no line serves it.
+     */
+    public List<String> getSameStopPlatforms(String lineId, String stopId) {
+        String line = lineId != null ? lineId : stibClient.getAllStopsByLine().values().stream()
+                .flatMap(List::stream)
+                .filter(d -> d.stops().stream().anyMatch(s -> s.id().equals(stopId)))
+                .map(LineStops::lineId)
+                .findFirst()
+                .orElse(null);
+        if (line == null) {
+            return List.of(stopId);
+        }
+        return DirectionMerger.merge(getStopDetailsByLines(List.of(line))).stream()
+                .filter(group -> group.stream().anyMatch(p -> p.stop().id().equals(stopId)))
+                .findFirst()
+                .map(group -> group.stream().map(p -> p.stop().id()).distinct().toList())
+                .orElse(List.of(stopId));
     }
 
     /**

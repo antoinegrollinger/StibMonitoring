@@ -16,6 +16,9 @@ public class CacheConfig {
     public static final String TRAVELLERS_INFORMATION = "travellersInformation";
     public static final String STOPS_BY_LINE = "stopsByLine";
     public static final String STOP_DETAILS = "stopDetails";
+    public static final String VEHICLE_POSITIONS = "vehiclePositions";
+    /** Keyed by stop id. */
+    public static final String WAITING_TIMES = "waitingTimes";
 
     @SuppressWarnings("null")
     @Bean
@@ -24,6 +27,8 @@ public class CacheConfig {
         manager.registerCustomCache(TRAVELLERS_INFORMATION, cache(properties.cache().messagesTtl(), 1));
         manager.registerCustomCache(STOPS_BY_LINE, cache(properties.cache().staticTtl(), 500));
         manager.registerCustomCache(STOP_DETAILS, cache(properties.cache().staticTtl(), 500));
+        manager.registerCustomCache(VEHICLE_POSITIONS, cache(properties.cache().liveTtl(), 1));
+        manager.registerCustomCache(WAITING_TIMES, cache(properties.cache().liveTtl(), 10_000));
         return manager;
     }
 

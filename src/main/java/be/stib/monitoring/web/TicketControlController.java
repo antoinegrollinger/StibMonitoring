@@ -20,7 +20,8 @@ import java.util.List;
 @RequestMapping("/api")
 public class TicketControlController {
 
-    public record ReportRequest(ControlType type, String lineId, String message) {
+    /** @param bothDirections also report it at the stop's platform(s) in the other direction */
+    public record ReportRequest(ControlType type, String lineId, String message, boolean bothDirections) {
     }
 
     private final TicketControlService controls;
@@ -37,8 +38,8 @@ public class TicketControlController {
 
     @PostMapping("/stops/{stopId:[A-Za-z0-9]+}/controls")
     @ResponseStatus(HttpStatus.CREATED)
-    public TicketControl report(@PathVariable String stopId, @RequestBody ReportRequest request) {
-        return controls.report(stopId, request.lineId(), request.type(), request.message());
+    public List<TicketControl> report(@PathVariable String stopId, @RequestBody ReportRequest request) {
+        return controls.report(stopId, request.lineId(), request.type(), request.message(), request.bothDirections());
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

@@ -1,7 +1,8 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { catchError, map, of, startWith, switchMap } from 'rxjs';
-import { I18n } from './i18n';
+import { I18n, TranslationKey } from './i18n';
 import { ControlType, LiveLineStops, StopRef, TicketControl } from './stib.models';
 import { StibService } from './stib.service';
 
@@ -63,6 +64,11 @@ const MAX_MESSAGE_LENGTH = 280;
           </small>
         </label>
 
+        <label class="checkbox">
+          <input type="checkbox" [checked]="bothDirections()" (change)="bothDirections.set($any($event.target).checked)" />
+          {{ i18n.t('control.bothDirections') }}
+        </label>
+
         <fieldset>
           <legend>{{ i18n.t('control.question') }}</legend>
           <label>
@@ -83,8 +89,8 @@ const MAX_MESSAGE_LENGTH = 280;
                     [value]="message()" (input)="message.set($any($event.target).value)"></textarea>
         </label>
 
-        @if (error()) {
-          <p class="error" role="alert">{{ i18n.t('control.error') }}</p>
+        @if (error(); as message) {
+          <p class="error" role="alert">{{ i18n.t(message) }}</p>
         }
         <div class="actions">
           <button type="button" (click)="open.set(false)">{{ i18n.t('control.cancel') }}</button>
@@ -174,7 +180,7 @@ const MAX_MESSAGE_LENGTH = 280;
 
     legend { margin-bottom: 4px; font-weight: 600; }
 
-    fieldset label { display: flex; align-items: center; gap: 6px; }
+    fieldset label, .checkbox { display: flex; align-items: center; gap: 6px; }
 
     .actions { display: flex; justify-content: flex-end; gap: 6px; }
 
@@ -198,8 +204,11 @@ export class ControlReport {
   readonly allLineIds = input<readonly string[]>([]);
   /** The map's selected stop. */
   readonly selectedStop = input<StopRef | null>(null);
+  /** Whether directions are merged; then "both directions" is ticked by default. */
+  readonly merged = input(false);
   readonly stopSelected = output<StopRef>();
-  readonly reported = output<TicketControl>();
+  /** One report per platform. */
+  readonly reported = output<TicketControl[]>();
 
   protected readonly i18n = inject(I18n);
   private readonly stib = inject(StibService);
@@ -211,9 +220,11 @@ export class ControlReport {
   /** Stop the report is for; follows the map's selection, but can be a stop of a line not shown. */
   private readonly picked = signal<StopRef | null>(null);
   protected readonly type = signal<ControlType | null>(null);
+  /** Also report the control at the stop's platform in the other direction. */
+  protected readonly bothDirections = signal(false);
   protected readonly message = signal('');
   protected readonly sending = signal(false);
-  protected readonly error = signal(false);
+  protected readonly error = signal<TranslationKey | null>(null);
   protected readonly sent = signal(false);
   private sentTimer?: ReturnType<typeof setTimeout>;
 
@@ -282,8 +293,9 @@ export class ControlReport {
   protected start(): void {
     this.line.set(null);
     this.type.set(null);
+    this.bothDirections.set(this.merged());
     this.message.set('');
-    this.error.set(false);
+    this.error.set(null);
     this.sent.set(false);
     this.open.set(true);
   }
@@ -319,19 +331,19 @@ export class ControlReport {
       return;
     }
     this.sending.set(true);
-    this.error.set(false);
-    this.stib.reportControl(stopId, this.line(), type, this.message().trim() || null).subscribe({
-      next: control => {
+    this.error.set(null);
+    this.stib.reportControl(stopId, this.line(), type, this.message().trim() || null, this.bothDirections()).subscribe({
+      next: controls => {
         this.sending.set(false);
         this.open.set(false);
         this.sent.set(true);
         clearTimeout(this.sentTimer);
         this.sentTimer = setTimeout(() => this.sent.set(false), 5000);
-        this.reported.emit(control);
+        this.reported.emit(controls);
       },
-      error: () => {
+      error: err => {
         this.sending.set(false);
-        this.error.set(true);
+        this.error.set(err instanceof HttpErrorResponse && err.status === 429 ? 'control.rateLimited' : 'control.error');
       },
     });
   }
