@@ -104,3 +104,41 @@ li.current .line {
   border: 1px solid var(--warning-border);
   border-radius: 6px;
 }
+
+.control {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  color: var(--warning-text);
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-border);
+  border-radius: 6px;
+
+  &.police {
+    color: var(--danger-text);
+    background: var(--danger-bg);
+    border-color: var(--danger-border);
+  }
+
+  p {
+    margin: 4px 0 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.control-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  .control-line {
+    font-size: 0.75rem;
+  }
+
+  .ago {
+    margin-left: auto;
+    font-size: 0.75rem;
+    opacity: 0.8;
+    white-space: nowrap;
+  }
+}

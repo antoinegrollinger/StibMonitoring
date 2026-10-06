@@ -52,6 +52,23 @@ export interface StopRef {
   stopId: string;
 }
 
+export type ControlType = 'POLICE' | 'CONTROLLERS';
+
+/** Ticket control reported by a traveller, as returned by GET /api/controls. */
+export interface TicketControl {
+  id: string;
+  stopId: string;
+  /** Name and position of the stop; null if STIB's stop data was unavailable when it was reported. */
+  stop: { id: string; name: LocalizedName | null; latitude: number | null; longitude: number | null } | null;
+  /** Line the reporter said the control concerns; null when not specified. */
+  lineId: string | null;
+  /** POLICE: police officers present; CONTROLLERS: STIB ticket controllers only. */
+  type: ControlType;
+  message: string | null;
+  reportedAt: string;
+  expiresAt: string;
+}
+
 /** Frontend settings from GET /api/config. */
 export interface FrontendConfig {
   refreshIntervalSeconds: number;

@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import { FrontendConfig, LineMessage, LiveLineStops, WaitingTime } from './stib.models';
+import { ControlType, FrontendConfig, LineMessage, LiveLineStops, TicketControl, WaitingTime } from './stib.models';
 
 @Injectable({ providedIn: 'root' })
 export class StibService {
@@ -25,5 +25,13 @@ export class StibService {
 
   getWaitingTimes(stopId: string): Observable<WaitingTime[]> {
     return this.http.get<WaitingTime[]>(`/api/stops/${encodeURIComponent(stopId)}/waiting-times`);
+  }
+
+  getControls(): Observable<TicketControl[]> {
+    return this.http.get<TicketControl[]>('/api/controls');
+  }
+
+  reportControl(stopId: string, lineId: string | null, type: ControlType, message: string | null): Observable<TicketControl> {
+    return this.http.post<TicketControl>(`/api/stops/${encodeURIComponent(stopId)}/controls`, { type, lineId, message });
   }
 }

@@ -20,3 +20,8 @@ stib:
 frontend:
   # Default auto-refresh interval of the live view (0s disables it). Users can override it in the UI.
   refresh-interval: 15s
+
+controls:
+  # Ticket controls reported by travellers are shown for this long, then dropped.
+  ttl: 30m
+  max-message-length: 280

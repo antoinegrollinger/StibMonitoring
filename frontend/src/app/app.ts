@@ -3,12 +3,13 @@ import { Component, ElementRef, Injector, afterNextRender, computed, inject, sig
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { EMPTY, catchError, distinctUntilChanged, interval, of, switchMap, tap } from 'rxjs';
 import { lineColor, routeColor } from './colors';
+import { ControlReport } from './control-report';
 import { LineMap } from './line-map';
 import { LineSelection } from './line-selection';
 import { I18n, LANGUAGES, Lang, Translatable } from './i18n';
 import { RefreshSettings } from './refresh';
 import { ThemeSettings } from './theme';
-import { LineMessage, LiveLineStops, StopRef, WaitingTime, directionKey } from './stib.models';
+import { LineMessage, LiveLineStops, LiveStop, StopRef, TicketControl, WaitingTime, directionKey } from './stib.models';
 import { StibService } from './stib.service';
 import { WaitingTimes } from './waiting-times';
 
@@ -26,7 +27,7 @@ interface LineGroup {
 
 @Component({
   selector: 'app-root',
-  imports: [LineMap, WaitingTimes],
+  imports: [ControlReport, LineMap, WaitingTimes],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
@@ -59,6 +60,16 @@ export class App {
   protected readonly now = signal(Date.now());
   protected readonly messages = signal<LineMessage[]>([]);
   protected readonly messagesExpanded = signal(false);
+  /** Active ticket controls reported by travellers, most recent first. */
+  protected readonly controls = signal<TicketControl[]>([]);
+  /** Active controls per stop id. */
+  protected readonly controlsByStop = computed(() => {
+    const byStop = new Map<string, TicketControl[]>();
+    for (const control of this.controls()) {
+      byStop.set(control.stopId, [...(byStop.get(control.stopId) ?? []), control]);
+    }
+    return byStop;
+  });
   /** Line groups the user expanded in the sidebar (only used when several lines are shown). */
   protected readonly expandedLines = signal<ReadonlySet<string>>(new Set());
   /** Per line, the only direction shown on the map; lines not in here show all their directions. */
@@ -94,8 +105,11 @@ export class App {
     }));
   });
 
-  /** The selected stop together with the direction it belongs to. */
-  protected readonly selection = computed(() => {
+  /**
+   * The selected stop, with the direction it belongs to when it is on a shown line. A stop with a
+   * reported control can also be selected without its line being shown; it then has no direction.
+   */
+  protected readonly selection = computed<{ stop: LiveStop; direction: LiveLineStops | null } | null>(() => {
     const ref = this.selectedStop();
     if (!ref) {
       return null;
@@ -106,7 +120,11 @@ export class App {
         return { stop, direction };
       }
     }
-    return null;
+    const reported = this.controlsByStop().get(ref.stopId)?.[0]?.stop;
+    return reported ? {
+      stop: { ...reported, id: ref.stopId, order: 0, vehiclePresent: false },
+      direction: null,
+    } : null;
   });
 
   /** Messages about the selected stop on its line, plus that line's line-wide ones. */
@@ -185,6 +203,18 @@ export class App {
       )
       .subscribe();
 
+    // Ticket controls reported by travellers; on failure keep showing the previous ones.
+    this.refresh.ticks()
+      .pipe(
+        switchMap(() => this.stib.getControls().pipe(catchError(() => of(null)))),
+        takeUntilDestroyed(),
+      )
+      .subscribe(controls => {
+        if (controls) {
+          this.controls.set(controls);
+        }
+      });
+
     // Forget a selected stop whose line is no longer shown.
     lineIds$.pipe(takeUntilDestroyed()).subscribe(lineIds => {
       const ref = this.selectedStop();
@@ -195,6 +225,10 @@ export class App {
 
     // Keep "x min" countdowns current between refreshes.
     interval(10_000).pipe(takeUntilDestroyed()).subscribe(() => this.now.set(Date.now()));
+  }
+
+  protected addControl(control: TicketControl): void {
+    this.controls.update(controls => [control, ...controls.filter(c => c.id !== control.id)]);
   }
 
   protected colorOf(lineId: string, directionIndex = 0): string {
@@ -295,7 +329,7 @@ export class App {
   protected selectStop(ref: StopRef | null): void {
     this.now.set(Date.now());
     this.selectedStop.set(ref);
-    if (ref && !this.isExpanded(ref.lineId)) {
+    if (ref && this.lines.lineIds().includes(ref.lineId) && !this.isExpanded(ref.lineId)) {
       this.toggleLine(ref.lineId);
     }
     const direction = this.selection()?.direction;

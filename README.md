@@ -69,6 +69,20 @@ with the line, plus stop-level messages (tagged with no line) about one of its s
 priority (lower = more important). `affectedStopIds` lists the line's stops the message mentions,
 and is empty for line-wide messages (including ones that list every stop, such as a strike).
 
+### Ticket controls
+
+```sh
+curl -X POST http://localhost:8080/api/stops/8742/controls \
+     -H 'Content-Type: application/json' \
+     -d '{"type":"POLICE","lineId":"5","message":"At the exit"}'   # type: POLICE or CONTROLLERS; lineId and message optional
+curl http://localhost:8080/api/controls                # every active report, most recent first
+```
+
+Travellers can report a ticket control at a stop, saying whether police are present or only
+ticket controllers, optionally naming the line, with an optional message (`controls.max-message-length`, default 280).
+Reports are kept in memory only and expire after `controls.ttl` (default 30 minutes), so they
+are lost when the backend restarts.
+
 ### Several lines at once
 
 ```sh

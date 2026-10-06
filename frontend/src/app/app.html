@@ -163,6 +163,11 @@
                         <span class="dot" [style.border-color]="colorOf(group.lineId, i)"
                               [style.background]="stop.vehiclePresent ? colorOf(group.lineId, i) : 'var(--surface)'"></span>
                         {{ i18n.name(stop.name) ?? stop.id }}
+                        @if (controlsByStop().get(stop.id)?.[0]; as control) {
+                          <span class="control-flag" [title]="i18n.t(control.type === 'POLICE' ? 'control.police' : 'control.controllers')">
+                            {{ control.type === 'POLICE' ? '🚓' : '🎫' }}
+                          </span>
+                        }
                         @if (stopsWithMessages().has(group.lineId + ':' + stop.id)) {
                           <span class="warning" [title]="i18n.t('messages.stopFlag')">⚠</span>
                         }
@@ -185,18 +190,27 @@
     <app-line-map class="map"
                   [directions]="directions()"
                   [hiddenDirections]="hiddenDirections()"
+                  [controls]="controlsByStop()"
                   [fitKey]="loadedKey()"
                   [lineIds]="lines.lineIds()"
                   [selectedStop]="selectedStop()"
                   (stopSelected)="selectStop($event)" />
+    <app-control-report class="control-report"
+                        [directions]="directions()"
+                        [lineIds]="lines.lineIds()"
+                        [allLineIds]="lines.allLineIds()"
+                        [selectedStop]="selectedStop()"
+                        (stopSelected)="selectStop($event)"
+                        (reported)="addControl($event)" />
     @if (selection(); as selected) {
       <app-waiting-times class="waiting-times"
                          [stop]="selected.stop"
-                         [direction]="selected.direction"
+                         [lineId]="selected.direction?.lineId ?? (selectedStop()?.lineId || null)"
                          [times]="waitingTimes()"
                          [error]="waitingTimesError()"
                          [now]="now()"
                          [messages]="selectedStopMessages()"
+                         [controls]="controlsByStop().get(selected.stop.id) ?? []"
                          (closed)="selectStop(null)" />
     }
   </div>

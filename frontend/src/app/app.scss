@@ -250,6 +250,14 @@
   width: min(320px, calc(100% - 24px));
 }
 
+.control-report {
+  position: absolute;
+  bottom: 24px;
+  left: 12px;
+  z-index: 1000; /* above Leaflet panes */
+  max-width: calc(100% - 24px);
+}
+
 .sidebar-actions {
   display: flex;
   justify-content: flex-end;
@@ -395,9 +403,18 @@
       background: var(--selected);
     }
 
+    .control-flag {
+      margin-left: auto;
+      font-size: 0.8rem;
+    }
+
     .warning {
       margin-left: auto;
       color: var(--warning-icon);
+    }
+
+    .control-flag + .warning {
+      margin-left: 0;
     }
   }
 }

@@ -75,6 +75,31 @@ body {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
 }
 
+/* Reported ticket controls, also Leaflet divIcons; a pin pointing down at the stop. */
+.control-marker {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  font-size: 13px;
+  line-height: 1;
+  background: #ffd33d;
+  border: 2px solid #9a6700;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+
+  &.police {
+    background: #ff8182;
+    border-color: #a40e26;
+  }
+
+  /* Keep the emoji upright inside the rotated pin. */
+  span {
+    transform: rotate(45deg);
+  }
+}
+
 /* Dark map: OpenStreetMap has no dark tiles, so invert the light ones (hue-rotate keeps water blue). */
 :root[data-theme='dark'] {
   .leaflet-container {

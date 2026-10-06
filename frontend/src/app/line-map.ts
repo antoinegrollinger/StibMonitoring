@@ -3,7 +3,7 @@ import * as L from 'leaflet';
 import { routeColor } from './colors';
 import { I18n } from './i18n';
 import { ThemeSettings } from './theme';
-import { LiveLineStops, LiveStop, StopRef, directionKey } from './stib.models';
+import { LiveLineStops, LiveStop, StopRef, TicketControl, directionKey } from './stib.models';
 
 const BRUSSELS: L.LatLngTuple = [50.8466, 4.3528];
 
@@ -24,6 +24,8 @@ export class LineMap implements AfterViewInit, OnDestroy {
   readonly directions = input.required<LiveLineStops[]>();
   /** Directions (`line/direction`) not drawn; they still count for colours and framing. */
   readonly hiddenDirections = input<ReadonlySet<string>>(new Set());
+  /** Active ticket controls per stop id, most recent first. */
+  readonly controls = input<ReadonlyMap<string, TicketControl[]>>(new Map());
   /** Changes whenever the map should re-frame the lines (i.e. a different set of lines was loaded). */
   readonly fitKey = input<string | null>(null);
   /** Lines shown, in display order; decides each line's colour. */
@@ -39,6 +41,8 @@ export class LineMap implements AfterViewInit, OnDestroy {
   private readonly routeLayer = L.layerGroup();
   /** Vehicles: rebuilt on every refresh. */
   private readonly vehicleLayer = L.layerGroup();
+  /** Reported ticket controls: rebuilt on every refresh. */
+  private readonly controlLayer = L.layerGroup();
   private routeKey: string | null = null;
   private fittedKey: string | null = null;
   private revealedKey: string | null = null;
@@ -56,6 +60,7 @@ export class LineMap implements AfterViewInit, OnDestroy {
     }).addTo(this.map);
     this.routeLayer.addTo(this.map);
     this.vehicleLayer.addTo(this.map);
+    this.controlLayer.addTo(this.map);
     this.render();
   }
 
@@ -67,6 +72,7 @@ export class LineMap implements AfterViewInit, OnDestroy {
     // Read every input up front so the effect tracks them even before the map exists.
     const directions = this.directions();
     const hidden = this.hiddenDirections();
+    const controls = this.controls();
     const fitKey = this.fitKey();
     const lineIds = this.lineIds();
     const selected = this.selectedStop();
@@ -156,6 +162,69 @@ export class LineMap implements AfterViewInit, OnDestroy {
           .addTo(this.vehicleLayer);
       });
     });
+
+    // One pin per stop with a reported control, above the stop so the stop itself stays clickable.
+    // Stops that are not on a shown direction get a stop marker of their own.
+    this.controlLayer.clearLayers();
+    const shownStops = new Map<string, { stop: LocatedStop; direction: LiveLineStops }>();
+    for (const direction of directions) {
+      if (!hidden.has(directionKey(direction))) {
+        for (const stop of direction.stops.filter(hasLocation)) {
+          if (!shownStops.has(stop.id)) {
+            shownStops.set(stop.id, { stop, direction });
+          }
+        }
+      }
+    }
+    for (const [stopId, [latest]] of controls) {
+      const shown = shownStops.get(stopId);
+      const position: L.LatLngTuple | null = shown ? [shown.stop.latitude, shown.stop.longitude]
+        : latest.stop?.latitude != null && latest.stop.longitude != null ? [latest.stop.latitude, latest.stop.longitude]
+        : null;
+      if (!position) {
+        continue;
+      }
+      const ref: StopRef = { lineId: shown?.direction.lineId ?? latest.lineId ?? '', stopId };
+      const select = () => this.stopSelected.emit(ref);
+      const stopLabel = shown ? this.stopLabel(shown.stop, shown.direction)
+        : `<strong>${escapeHtml(this.i18n.name(latest.stop?.name) ?? stopId)}</strong>`;
+
+      if (!shown) {
+        const isSelected = selected?.stopId === stopId;
+        if (isSelected) {
+          selectedPosition = position;
+        }
+        L.circleMarker(position, {
+          radius: isSelected ? 9 : 5,
+          color: dark ? '#9198a1' : '#59636e',
+          weight: isSelected ? 4 : 2,
+          fillColor: dark ? '#161b22' : '#fff',
+          fillOpacity: 1,
+        })
+          .bindTooltip(stopLabel)
+          .on('click', select)
+          .addTo(this.controlLayer);
+      }
+
+      const police = latest.type === 'POLICE';
+      const what = this.i18n.t(police ? 'control.police' : 'control.controllers')
+        + (latest.lineId ? ` · ${this.i18n.t('map.line', { line: latest.lineId })}` : '');
+      L.marker(position, {
+        icon: L.divIcon({
+          className: '',
+          html: `<div class="control-marker${police ? ' police' : ''}"><span>${police ? '🚓' : '🎫'}</span></div>`,
+          iconSize: [24, 24],
+          iconAnchor: [12, 34],
+        }),
+        zIndexOffset: 2000,
+        title: `${this.i18n.t('control.mapLabel')}: ${what}`,
+      })
+        .bindTooltip(`<strong>${escapeHtml(what)}</strong>`
+          + (latest.message ? `<br>${escapeHtml(latest.message)}` : '')
+          + `<br>${stopLabel}`, { direction: 'top', offset: [0, -24] })
+        .on('click', select)
+        .addTo(this.controlLayer);
+    }
 
     if (fitKey !== this.fittedKey && bounds.isValid()) {
       this.map.fitBounds(bounds, { padding: [32, 32] });
