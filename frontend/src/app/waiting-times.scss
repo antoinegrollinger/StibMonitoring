@@ -142,3 +142,18 @@ li.current .line {
     white-space: nowrap;
   }
 }
+
+/* Phones: the parent shows this panel as a scrolling bottom sheet, so the list needs no scroll of its own. */
+@media (max-width: 700px) {
+  :host {
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+
+  ul {
+    max-height: none;
+  }
+
+  .close {
+    padding: 4px 8px;
+  }
+}

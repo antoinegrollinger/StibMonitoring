@@ -5,8 +5,9 @@ export const LANGUAGES = ['en', 'fr', 'nl'] as const;
 export type Lang = (typeof LANGUAGES)[number];
 
 const en = {
-  'app.title': 'STIB Monitoring',
+  'app.title': 'STIB network and ticket controls',
   'app.language': 'Language',
+  'app.settings': 'Settings',
   'lines.label': 'Lines',
   'lines.placeholder': 'e.g. 1, 5, 92',
   'lines.add': 'Add',
@@ -44,6 +45,11 @@ const en = {
   'eta.minutes': '{minutes} min',
   'map.line': 'Line {line}',
   'map.vehicle': 'Vehicle',
+  'map.locate': 'Show my location',
+  'map.locating': 'Finding your location…',
+  'map.you': 'You are here',
+  'map.locationDenied': 'Location access is blocked: allow it in your browser settings to see where you are.',
+  'map.locationUnavailable': 'Your location is not available right now.',
   'refresh.label': 'Auto-refresh',
   'refresh.off': 'Off',
   'refresh.seconds': '{seconds} s',
@@ -85,8 +91,9 @@ type PluralKey = { [K in TranslationKey]: K extends `${infer Base}.one` ? Base :
 const TRANSLATIONS: Record<Lang, Record<TranslationKey, string>> = {
   en,
   fr: {
-    'app.title': 'STIB Monitoring',
+    'app.title': 'Réseau STIB et contrôles',
     'app.language': 'Langue',
+    'app.settings': 'Paramètres',
     'lines.label': 'Lignes',
     'lines.placeholder': 'ex. 1, 5, 92',
     'lines.add': 'Ajouter',
@@ -124,6 +131,11 @@ const TRANSLATIONS: Record<Lang, Record<TranslationKey, string>> = {
     'eta.minutes': '{minutes} min',
     'map.line': 'Ligne {line}',
     'map.vehicle': 'Véhicule',
+    'map.locate': 'Afficher ma position',
+    'map.locating': 'Recherche de votre position…',
+    'map.you': 'Vous êtes ici',
+    'map.locationDenied': 'L’accès à la position est bloqué : autorisez-le dans les réglages du navigateur pour voir où vous êtes.',
+    'map.locationUnavailable': 'Votre position n’est pas disponible pour le moment.',
     'refresh.label': 'Actualisation auto',
     'refresh.off': 'Désactivée',
     'refresh.seconds': '{seconds} s',
@@ -157,8 +169,9 @@ const TRANSLATIONS: Record<Lang, Record<TranslationKey, string>> = {
     'theme.dark': 'Sombre',
   },
   nl: {
-    'app.title': 'MIVB Monitoring',
+    'app.title': 'MIVB-netwerk en controles',
     'app.language': 'Taal',
+    'app.settings': 'Instellingen',
     'lines.label': 'Lijnen',
     'lines.placeholder': 'bv. 1, 5, 92',
     'lines.add': 'Toevoegen',
@@ -196,6 +209,11 @@ const TRANSLATIONS: Record<Lang, Record<TranslationKey, string>> = {
     'eta.minutes': '{minutes} min',
     'map.line': 'Lijn {line}',
     'map.vehicle': 'Voertuig',
+    'map.locate': 'Mijn locatie tonen',
+    'map.locating': 'Uw locatie zoeken…',
+    'map.you': 'U bent hier',
+    'map.locationDenied': 'Locatietoegang is geblokkeerd: sta die toe in de browserinstellingen om te zien waar u bent.',
+    'map.locationUnavailable': 'Uw locatie is momenteel niet beschikbaar.',
     'refresh.label': 'Automatisch vernieuwen',
     'refresh.off': 'Uit',
     'refresh.seconds': '{seconds} s',
@@ -249,6 +267,7 @@ export class I18n {
     effect(() => {
       const lang = this.lang();
       document.documentElement.lang = lang;
+      document.title = TRANSLATIONS[lang]['app.title'];
       try {
         localStorage.setItem(STORAGE_KEY, lang);
       } catch {

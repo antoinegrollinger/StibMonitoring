@@ -1,5 +1,10 @@
 <header class="toolbar">
-  <h1>{{ i18n.t('app.title') }}</h1>
+  <div class="title-row">
+    <h1>{{ i18n.t('app.title') }}</h1>
+    <button type="button" class="settings-toggle" [attr.aria-expanded]="settingsOpen()"
+            [attr.aria-label]="i18n.t('app.settings')" [title]="i18n.t('app.settings')"
+            (click)="settingsOpen.set(!settingsOpen())">⚙</button>
+  </div>
 
   <form class="line-picker" (submit)="$event.preventDefault(); addLines(lineInput)">
     <span class="label" id="lines-label">{{ i18n.t('lines.label') }}</span>
@@ -45,30 +50,33 @@
       {{ i18n.plural('status.summary', vehicleCount(), { time: i18n.time(updated) }) }}
     }
   </span>
-  <div class="refresh">
-    <label for="refresh-interval">{{ i18n.t('refresh.label') }}</label>
-    <select id="refresh-interval" (change)="refresh.set(+$any($event.target).value)">
-      @for (seconds of refresh.options(); track seconds) {
-        <option [value]="seconds" [selected]="seconds === refresh.intervalSeconds()">
-          {{ seconds === 0 ? i18n.t('refresh.off') : i18n.t('refresh.seconds', { seconds }) }}
-        </option>
+  <!-- Always shown on wide screens; behind the ⚙ button on phones. -->
+  <div class="settings" [class.open]="settingsOpen()">
+    <div class="refresh">
+      <label for="refresh-interval">{{ i18n.t('refresh.label') }}</label>
+      <select id="refresh-interval" (change)="refresh.set(+$any($event.target).value)">
+        @for (seconds of refresh.options(); track seconds) {
+          <option [value]="seconds" [selected]="seconds === refresh.intervalSeconds()">
+            {{ seconds === 0 ? i18n.t('refresh.off') : i18n.t('refresh.seconds', { seconds }) }}
+          </option>
+        }
+      </select>
+      <button type="button" class="refresh-now" [title]="i18n.t('refresh.now')" [attr.aria-label]="i18n.t('refresh.now')"
+              (click)="refresh.refreshNow()">↻</button>
+    </div>
+    <div class="segmented themes" role="group" [attr.aria-label]="i18n.t('theme.label')">
+      @for (option of themeOptions; track option.theme) {
+        <button type="button" [class.active]="option.theme === theme.theme()" [attr.aria-pressed]="option.theme === theme.theme()"
+                [title]="i18n.t(option.label)" [attr.aria-label]="i18n.t(option.label)"
+                (click)="theme.theme.set(option.theme)">{{ option.icon }}</button>
       }
-    </select>
-    <button type="button" class="refresh-now" [title]="i18n.t('refresh.now')" [attr.aria-label]="i18n.t('refresh.now')"
-            (click)="refresh.refreshNow()">↻</button>
-  </div>
-  <div class="segmented themes" role="group" [attr.aria-label]="i18n.t('theme.label')">
-    @for (option of themeOptions; track option.theme) {
-      <button type="button" [class.active]="option.theme === theme.theme()" [attr.aria-pressed]="option.theme === theme.theme()"
-              [title]="i18n.t(option.label)" [attr.aria-label]="i18n.t(option.label)"
-              (click)="theme.theme.set(option.theme)">{{ option.icon }}</button>
-    }
-  </div>
-  <div class="segmented languages" role="group" [attr.aria-label]="i18n.t('app.language')">
-    @for (lang of languages; track lang) {
-      <button type="button" [class.active]="lang === i18n.lang()" [attr.aria-pressed]="lang === i18n.lang()"
-              [attr.lang]="lang" (click)="setLanguage(lang)">{{ lang.toUpperCase() }}</button>
-    }
+    </div>
+    <div class="segmented languages" role="group" [attr.aria-label]="i18n.t('app.language')">
+      @for (lang of languages; track lang) {
+        <button type="button" [class.active]="lang === i18n.lang()" [attr.aria-pressed]="lang === i18n.lang()"
+                [attr.lang]="lang" (click)="setLanguage(lang)">{{ lang.toUpperCase() }}</button>
+      }
+    </div>
   </div>
 </header>
 
@@ -234,7 +242,7 @@
       }
     }
   </aside>
-  <div class="map-area">
+  <div class="map-area" [class.reporting]="reportOpen()">
     <app-line-map class="map"
                   [directions]="directions()"
                   [hiddenDirections]="hiddenDirections()"
@@ -250,6 +258,7 @@
                         [selectedStop]="selectedStop()"
                         (stopSelected)="selectStop($event)"
                         [merged]="merge.merged()"
+                        (openChange)="reportOpen.set($event)"
                         (reported)="addControls($event)" />
     @if (selection(); as selected) {
       <app-waiting-times class="waiting-times"

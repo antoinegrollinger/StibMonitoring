@@ -1,6 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { outputFromObservable, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { catchError, map, of, startWith, switchMap } from 'rxjs';
 import { I18n, TranslationKey } from './i18n';
 import { ControlType, LiveLineStops, StopRef, TicketControl } from './stib.models';
@@ -193,6 +193,31 @@ const MAX_MESSAGE_LENGTH = 280;
     }
 
     .error { margin: 0; color: var(--danger-text); }
+
+    /* Phones: a bottom sheet over the sidebar, so stops can still be tapped on the map above. */
+    @media (max-width: 700px) {
+      .fab { padding: 8px 12px; font-size: 0.85rem; }
+
+      .panel {
+        position: fixed;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        width: auto;
+        max-height: 55dvh;
+        padding-bottom: max(12px, env(safe-area-inset-bottom));
+        border-radius: 12px 12px 0 0;
+      }
+
+      /* 16px keeps iOS from zooming in when a field gets focus. */
+      select, textarea { font-size: 16px; }
+
+      button { padding: 8px 14px; }
+
+      .close { padding: 4px 8px; }
+
+      fieldset label, .checkbox { min-height: 32px; }
+    }
   `,
 })
 export class ControlReport {
@@ -215,6 +240,8 @@ export class ControlReport {
   protected readonly maxLength = MAX_MESSAGE_LENGTH;
 
   protected readonly open = signal(false);
+  /** Emits when the form opens or closes. */
+  readonly openChange = outputFromObservable(toObservable(this.open));
   /** Line the control concerns, if the reporter says; also narrows the stop list. */
   protected readonly line = signal<string | null>(null);
   /** Stop the report is for; follows the map's selection, but can be a stop of a line not shown. */

@@ -12,6 +12,15 @@ type LocatedStop = LiveStop & { latitude: number; longitude: number };
 /** Above this many lines, stops and vehicles are drawn smaller to keep the map readable. */
 const COMPACT_THRESHOLD = 3;
 
+/** Zoom level when centring on the user's location: enough to see the nearby stops. */
+const LOCATION_ZOOM = 16;
+
+const CROSSHAIR_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" '
+  + 'stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5" fill="currentColor"/>'
+  + '<path d="M12 1v4M12 19v4M1 12h4M19 12h4"/></svg>';
+
+type LocationState = 'off' | 'locating' | 'on' | 'denied' | 'unavailable';
+
 @Component({
   selector: 'app-line-map',
   template: '<div #map class="map"></div>',
@@ -43,12 +52,25 @@ export class LineMap implements AfterViewInit, OnDestroy {
   private readonly vehicleLayer = L.layerGroup();
   /** Reported ticket controls: rebuilt on every refresh. */
   private readonly controlLayer = L.layerGroup();
+  /** The user's position and its accuracy circle, when they let the site use their location. */
+  private readonly locationLayer = L.layerGroup();
+  private locateButton?: HTMLAnchorElement;
+  private locationState: LocationState = 'off';
+  private position: L.LatLng | null = null;
+  private watchId: number | null = null;
+  /** Centre the map on the next position fix (set when the user presses the button). */
+  private centreOnNextFix = false;
   private routeKey: string | null = null;
   private fittedKey: string | null = null;
   private revealedKey: string | null = null;
 
   constructor() {
     effect(() => this.render());
+    // Keep the location button's label in the current language.
+    effect(() => {
+      this.i18n.lang();
+      this.updateLocateButton();
+    });
   }
 
   ngAfterViewInit(): void {
@@ -61,11 +83,120 @@ export class LineMap implements AfterViewInit, OnDestroy {
     this.routeLayer.addTo(this.map);
     this.vehicleLayer.addTo(this.map);
     this.controlLayer.addTo(this.map);
+    this.locationLayer.addTo(this.map);
+    this.addLocateControl(this.map);
     this.render();
+    this.locateIfAlreadyAllowed();
   }
 
   ngOnDestroy(): void {
+    if (this.watchId !== null) {
+      navigator.geolocation.clearWatch(this.watchId);
+    }
     this.map?.remove();
+  }
+
+  /** A button under the zoom buttons; pressing it asks for the location (the browser prompts once). */
+  private addLocateControl(map: L.Map): void {
+    const control = new L.Control({ position: 'topleft' });
+    control.onAdd = () => {
+      const bar = L.DomUtil.create('div', 'leaflet-bar locate-control');
+      const button = L.DomUtil.create('a', 'locate-button', bar) as HTMLAnchorElement;
+      button.href = '#';
+      button.setAttribute('role', 'button');
+      button.innerHTML = CROSSHAIR_ICON;
+      L.DomEvent.disableClickPropagation(bar);
+      L.DomEvent.on(button, 'click', e => {
+        L.DomEvent.preventDefault(e);
+        this.locate();
+      });
+      this.locateButton = button;
+      this.updateLocateButton();
+      return bar;
+    };
+    control.addTo(map);
+  }
+
+  /** Shows the location without prompting when the user already allowed it on an earlier visit. */
+  private locateIfAlreadyAllowed(): void {
+    navigator.permissions?.query({ name: 'geolocation' })
+      .then(status => {
+        if (status.state === 'granted') {
+          this.startWatching();
+        }
+      })
+      .catch(() => { /* Permissions API unsupported: wait for the button */ });
+  }
+
+  private locate(): void {
+    if (this.position && this.map) {
+      this.map.setView(this.position, Math.max(this.map.getZoom(), LOCATION_ZOOM));
+      return;
+    }
+    this.centreOnNextFix = true;
+    this.startWatching();
+  }
+
+  private startWatching(): void {
+    if (!('geolocation' in navigator)) {
+      this.setLocationState('unavailable');
+      return;
+    }
+    if (this.watchId !== null) {
+      return;
+    }
+    this.setLocationState('locating');
+    this.watchId = navigator.geolocation.watchPosition(
+      position => this.showPosition(position),
+      error => {
+        if (error.code === error.PERMISSION_DENIED) {
+          navigator.geolocation.clearWatch(this.watchId!);
+          this.watchId = null;
+          this.locationLayer.clearLayers();
+          this.position = null;
+          this.setLocationState('denied');
+        } else if (!this.position) {
+          // Timeout or no fix yet: keep watching, a later fix may still come.
+          this.setLocationState('unavailable');
+        }
+      },
+      { enableHighAccuracy: true, maximumAge: 10_000 },
+    );
+  }
+
+  private showPosition(position: GeolocationPosition): void {
+    const { latitude, longitude, accuracy } = position.coords;
+    this.position = L.latLng(latitude, longitude);
+    this.locationLayer.clearLayers();
+    L.circle(this.position, { radius: accuracy, color: '#1f6feb', weight: 1, opacity: 0.4, fillOpacity: 0.1, interactive: false })
+      .addTo(this.locationLayer);
+    L.circleMarker(this.position, { radius: 7, color: '#fff', weight: 2, fillColor: '#1f6feb', fillOpacity: 1 })
+      .bindTooltip(escapeHtml(this.i18n.t('map.you')))
+      .addTo(this.locationLayer);
+    this.setLocationState('on');
+    if (this.centreOnNextFix && this.map) {
+      this.centreOnNextFix = false;
+      this.map.setView(this.position, Math.max(this.map.getZoom(), LOCATION_ZOOM));
+    }
+  }
+
+  private setLocationState(state: LocationState): void {
+    this.locationState = state;
+    this.updateLocateButton();
+  }
+
+  private updateLocateButton(): void {
+    const button = this.locateButton;
+    if (!button) {
+      return;
+    }
+    const label = this.i18n.t(this.locationState === 'denied' ? 'map.locationDenied'
+      : this.locationState === 'unavailable' ? 'map.locationUnavailable'
+      : this.locationState === 'locating' ? 'map.locating'
+      : 'map.locate');
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.dataset['state'] = this.locationState;
   }
 
   private render(): void {

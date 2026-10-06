@@ -73,6 +73,10 @@ export class App {
   protected readonly now = signal(Date.now());
   protected readonly messages = signal<LineMessage[]>([]);
   protected readonly messagesExpanded = signal(false);
+  /** Phones only: the toolbar settings (refresh, theme, language) are folded away until opened. */
+  protected readonly settingsOpen = signal(false);
+  /** Whether the report form is open; on phones it then takes the place of the stop panel. */
+  protected readonly reportOpen = signal(false);
   /** Active ticket controls reported by travellers, most recent first. */
   protected readonly controls = signal<TicketControl[]>([]);
   /** Active controls per stop id. */

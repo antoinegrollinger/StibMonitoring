@@ -100,6 +100,27 @@ body {
   }
 }
 
+/* "Show my location" map button, styled like Leaflet's zoom buttons. */
+.locate-button {
+  display: grid !important;
+  place-items: center;
+  color: #333;
+
+  &[data-state='on'] { color: #1f6feb; }
+  &[data-state='locating'] { color: #1f6feb; opacity: 0.6; }
+  &[data-state='denied'],
+  &[data-state='unavailable'] { color: #cf222e; }
+}
+
+:root[data-theme='dark'] .locate-button {
+  color: var(--text);
+
+  &[data-state='on'],
+  &[data-state='locating'] { color: var(--link); }
+  &[data-state='denied'],
+  &[data-state='unavailable'] { color: var(--danger-text); }
+}
+
 /* Dark map: OpenStreetMap has no dark tiles, so invert the light ones (hue-rotate keeps water blue). */
 :root[data-theme='dark'] {
   .leaflet-container {
