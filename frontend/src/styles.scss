@@ -1,3 +1,54 @@
+/* Colour tokens; `data-theme` on <html> is set by ThemeSettings (and the inline script in index.html). */
+:root {
+  color-scheme: light;
+  --text: #1f2328;
+  --text-muted: #59636e;
+  --bg: #f6f8fa;
+  --surface: #fff;
+  --hover: #f3f4f6;
+  --border: #d0d7de;
+  --border-muted: #eaeef2;
+  --accent: #1f6feb;
+  --link: #0969da;
+  --selected: #ddf4ff;
+  --strong-bg: #1f2328;
+  --strong-fg: #fff;
+  --neutral-badge: #8c959f;
+  --danger-text: #82071e;
+  --danger-bg: #ffebe9;
+  --danger-border: #ffcecb;
+  --warning-text: #4d2d00;
+  --warning-bg: #fff8c5;
+  --warning-border: #eac54f;
+  --warning-icon: #9a6700;
+  --shadow: rgba(0, 0, 0, 0.2);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --text: #e6edf3;
+  --text-muted: #9198a1;
+  --bg: #0d1117;
+  --surface: #161b22;
+  --hover: #21262d;
+  --border: #30363d;
+  --border-muted: #21262d;
+  --accent: #1f6feb;
+  --link: #4493f8;
+  --selected: rgba(56, 139, 253, 0.2);
+  --strong-bg: #e6edf3;
+  --strong-fg: #0d1117;
+  --neutral-badge: #6e7681;
+  --danger-text: #ffa198;
+  --danger-bg: rgba(248, 81, 73, 0.12);
+  --danger-border: rgba(248, 81, 73, 0.4);
+  --warning-text: #e3b341;
+  --warning-bg: rgba(187, 128, 9, 0.15);
+  --warning-border: rgba(187, 128, 9, 0.4);
+  --warning-icon: #d29922;
+  --shadow: rgba(0, 0, 0, 0.6);
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
 }
@@ -9,8 +60,8 @@ html, body {
 
 body {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  color: #1f2328;
-  background: #f6f8fa;
+  color: var(--text);
+  background: var(--bg);
 }
 
 /* Vehicle markers are Leaflet divIcons, so they are styled globally. */
@@ -22,4 +73,36 @@ body {
   border-radius: 50%;
   border: 2px solid #fff;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+
+/* Dark map: OpenStreetMap has no dark tiles, so invert the light ones (hue-rotate keeps water blue). */
+:root[data-theme='dark'] {
+  .leaflet-container {
+    background: #1b1f24;
+  }
+
+  .leaflet-tile-pane {
+    filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9);
+  }
+
+  .leaflet-bar a,
+  .leaflet-control-attribution,
+  .leaflet-tooltip {
+    color: var(--text);
+    background: var(--surface);
+    border-color: var(--border);
+  }
+
+  .leaflet-bar a:hover {
+    background: var(--hover);
+  }
+
+  .leaflet-control-attribution a {
+    color: var(--link);
+  }
+
+  .leaflet-tooltip-top::before { border-top-color: var(--surface); }
+  .leaflet-tooltip-bottom::before { border-bottom-color: var(--surface); }
+  .leaflet-tooltip-left::before { border-left-color: var(--surface); }
+  .leaflet-tooltip-right::before { border-right-color: var(--surface); }
 }

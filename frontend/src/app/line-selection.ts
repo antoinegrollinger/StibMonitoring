@@ -57,6 +57,12 @@ export class LineSelection {
     this.picked.update(picked => picked.filter(id => id !== lineId));
   }
 
+  /** Shows no lines at all. */
+  clear(): void {
+    this.showAll.set(false);
+    this.picked.set([]);
+  }
+
   toggleAll(): void {
     this.showAll.update(all => !all);
   }

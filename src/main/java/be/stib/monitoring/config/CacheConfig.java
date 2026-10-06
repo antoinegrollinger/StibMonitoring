@@ -17,6 +17,7 @@ public class CacheConfig {
     public static final String STOPS_BY_LINE = "stopsByLine";
     public static final String STOP_DETAILS = "stopDetails";
 
+    @SuppressWarnings("null")
     @Bean
     CacheManager cacheManager(StibProperties properties) {
         CaffeineCacheManager manager = new CaffeineCacheManager();

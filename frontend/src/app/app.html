@@ -4,7 +4,10 @@
   <form class="line-picker" (submit)="$event.preventDefault(); addLines(lineInput)">
     <span class="label" id="lines-label">{{ i18n.t('lines.label') }}</span>
     @if (lines.showAll()) {
-      <span class="chip all">{{ i18n.t('lines.allCount', { count: lines.allLineIds().length }) }}</span>
+      <span class="chip all">
+        {{ i18n.t('lines.allCount', { count: lines.allLineIds().length }) }}
+        <button type="button" [attr.aria-label]="i18n.t('lines.removeAll')" (click)="toggleAllLines()">×</button>
+      </span>
     } @else {
       @for (lineId of lines.picked(); track lineId) {
         <span class="chip" [style.--line-color]="lineColor(lineId)">
@@ -15,6 +18,7 @@
       }
     }
     <input #lineInput list="all-lines" autocomplete="off" aria-labelledby="lines-label"
+           (input)="onLineInput($event, lineInput)"
            [placeholder]="i18n.t('lines.placeholder')" />
     <datalist id="all-lines">
       @for (lineId of lines.allLineIds(); track lineId) {
@@ -24,6 +28,9 @@
     <button type="submit" class="primary">{{ i18n.t('lines.add') }}</button>
     <button type="button" class="toggle" [class.active]="lines.showAll()" [attr.aria-pressed]="lines.showAll()"
             (click)="toggleAllLines()">{{ i18n.t('lines.all') }}</button>
+    @if (lines.lineIds().length) {
+      <button type="button" class="toggle" (click)="clearLines()">{{ i18n.t('lines.clear') }}</button>
+    }
     @if (lineInputError(); as message) {
       <span class="input-error" role="alert">{{ i18n.translate(message) }}</span>
     }
@@ -48,7 +55,14 @@
     <button type="button" class="refresh-now" [title]="i18n.t('refresh.now')" [attr.aria-label]="i18n.t('refresh.now')"
             (click)="refresh.refreshNow()">↻</button>
   </div>
-  <div class="languages" role="group" [attr.aria-label]="i18n.t('app.language')">
+  <div class="segmented themes" role="group" [attr.aria-label]="i18n.t('theme.label')">
+    @for (option of themeOptions; track option.theme) {
+      <button type="button" [class.active]="option.theme === theme.theme()" [attr.aria-pressed]="option.theme === theme.theme()"
+              [title]="i18n.t(option.label)" [attr.aria-label]="i18n.t(option.label)"
+              (click)="theme.theme.set(option.theme)">{{ option.icon }}</button>
+    }
+  </div>
+  <div class="segmented languages" role="group" [attr.aria-label]="i18n.t('app.language')">
     @for (lang of languages; track lang) {
       <button type="button" [class.active]="lang === i18n.lang()" [attr.aria-pressed]="lang === i18n.lang()"
               [attr.lang]="lang" (click)="setLanguage(lang)">{{ lang.toUpperCase() }}</button>
@@ -108,29 +122,55 @@
         }
         @if (isExpanded(group.lineId)) {
           @for (direction of group.directions; track direction.direction; let i = $index) {
-            <div class="direction">
+            <div class="direction" [class.hidden-on-map]="!isDirectionShown(direction)">
               <h2>
-                <span class="swatch" [style.background]="colorOf(group.lineId, i)"></span>
-                → {{ i18n.name(direction.destination) ?? direction.direction }}
-              </h2>
-              <ol class="stops">
-                @for (stop of direction.stops; track stop.id) {
-                  <li>
-                    <button type="button"
-                            [class.occupied]="stop.vehiclePresent"
-                            [class.selected]="isSelected(group.lineId, stop.id)"
-                            [attr.aria-pressed]="isSelected(group.lineId, stop.id)"
-                            (click)="selectStop({ lineId: group.lineId, stopId: stop.id })">
-                      <span class="dot" [style.border-color]="colorOf(group.lineId, i)"
-                            [style.background]="stop.vehiclePresent ? colorOf(group.lineId, i) : '#fff'"></span>
-                      {{ i18n.name(stop.name) ?? stop.id }}
-                      @if (stopsWithMessages().has(group.lineId + ':' + stop.id)) {
-                        <span class="warning" [title]="i18n.t('messages.stopFlag')">⚠</span>
-                      }
-                    </button>
-                  </li>
+                <button type="button" class="direction-header" [attr.aria-expanded]="isDirectionExpanded(direction)"
+                        (click)="toggleDirection(direction)">
+                  <span class="swatch" [style.background]="colorOf(group.lineId, i)"></span>
+                  → {{ i18n.name(direction.destination) ?? direction.direction }}
+                  <span class="chevron" aria-hidden="true">{{ isDirectionExpanded(direction) ? '▴' : '▾' }}</span>
+                </button>
+                @if (group.directions.length > 1) {
+                  @let solo = soloDirections().has(group.lineId) && isDirectionShown(direction);
+                  <button type="button" class="eye" [class.active]="solo" [attr.aria-pressed]="solo"
+                          [title]="i18n.t(solo ? 'direction.showAll' : 'direction.showOnly')"
+                          [attr.aria-label]="i18n.t(solo ? 'direction.showAll' : 'direction.showOnly')"
+                          (click)="toggleSoloDirection(direction)">
+                    @if (isDirectionShown(direction)) {
+                      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor"
+                           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" />
+                      </svg>
+                    } @else {
+                      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor"
+                           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-2.9 3.8M6.6 6.6C3.7 8.4 2 12 2 12s3.5 7 10 7c1.9 0 3.6-.6 5-1.5" />
+                        <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M2 2l20 20" />
+                      </svg>
+                    }
+                  </button>
                 }
-              </ol>
+              </h2>
+              @if (isDirectionExpanded(direction)) {
+                <ol class="stops">
+                  @for (stop of direction.stops; track stop.id) {
+                    <li>
+                      <button type="button"
+                              [class.occupied]="stop.vehiclePresent"
+                              [class.selected]="isSelected(group.lineId, stop.id)"
+                              [attr.aria-pressed]="isSelected(group.lineId, stop.id)"
+                              (click)="selectStop({ lineId: group.lineId, stopId: stop.id })">
+                        <span class="dot" [style.border-color]="colorOf(group.lineId, i)"
+                              [style.background]="stop.vehiclePresent ? colorOf(group.lineId, i) : 'var(--surface)'"></span>
+                        {{ i18n.name(stop.name) ?? stop.id }}
+                        @if (stopsWithMessages().has(group.lineId + ':' + stop.id)) {
+                          <span class="warning" [title]="i18n.t('messages.stopFlag')">⚠</span>
+                        }
+                      </button>
+                    </li>
+                  }
+                </ol>
+              }
             </div>
           }
         }
@@ -144,6 +184,7 @@
   <div class="map-area">
     <app-line-map class="map"
                   [directions]="directions()"
+                  [hiddenDirections]="hiddenDirections()"
                   [fitKey]="loadedKey()"
                   [lineIds]="lines.lineIds()"
                   [selectedStop]="selectedStop()"

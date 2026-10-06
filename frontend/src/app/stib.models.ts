@@ -56,3 +56,8 @@ export interface StopRef {
 export interface FrontendConfig {
   refreshIntervalSeconds: number;
 }
+
+/** Identifies one direction of one line, e.g. `1/V`. */
+export function directionKey(direction: LiveLineStops): string {
+  return `${direction.lineId}/${direction.direction}`;
+}

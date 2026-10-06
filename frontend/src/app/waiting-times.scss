@@ -1,9 +1,9 @@
 :host {
   display: block;
   padding: 12px 16px;
-  background: #fff;
+  background: var(--surface);
   border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 16px var(--shadow);
 }
 
 header {
@@ -21,14 +21,14 @@ h2 {
 .other-name {
   margin: 2px 0 0;
   font-size: 0.8rem;
-  color: #59636e;
+  color: var(--text-muted);
 }
 
 .close {
   padding: 0 4px;
   font-size: 1.4rem;
   line-height: 1;
-  color: #59636e;
+  color: var(--text-muted);
   background: none;
   border: 0;
   cursor: pointer;
@@ -48,12 +48,12 @@ li {
   gap: 10px;
   padding: 6px 0;
   font-size: 0.85rem;
-  border-top: 1px solid #eaeef2;
-  color: #59636e;
+  border-top: 1px solid var(--border-muted);
+  color: var(--text-muted);
 }
 
 li.current {
-  color: #1f2328;
+  color: var(--text);
 }
 
 .line {
@@ -62,12 +62,13 @@ li.current {
   font-weight: 700;
   text-align: center;
   color: #fff;
-  background: #8c959f;
+  background: var(--neutral-badge);
   border-radius: 4px;
 }
 
 li.current .line {
-  background: #1f2328;
+  color: var(--strong-fg);
+  background: var(--strong-bg);
 }
 
 .destination {
@@ -78,7 +79,7 @@ li.current .line {
   small {
     font-size: 0.75rem;
     font-style: italic;
-    color: #9a6700;
+    color: var(--warning-icon);
   }
 }
 
@@ -90,7 +91,7 @@ li.current .line {
 
 .muted {
   margin: 10px 0 0;
-  color: #59636e;
+  color: var(--text-muted);
   font-size: 0.85rem;
 }
 
@@ -98,8 +99,8 @@ li.current .line {
   margin: 10px 0 0;
   padding: 8px 10px;
   font-size: 0.8rem;
-  color: #4d2d00;
-  background: #fff8c5;
-  border: 1px solid #eac54f;
+  color: var(--warning-text);
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-border);
   border-radius: 6px;
 }

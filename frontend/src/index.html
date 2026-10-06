@@ -5,7 +5,17 @@
   <title>STIB Monitoring</title>
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <script>
+    // Apply the saved theme before first paint to avoid a light flash; ThemeSettings takes over once the app boots.
+    (function () {
+      var theme = 'system';
+      try { theme = localStorage.getItem('stib-monitoring.theme') || theme; } catch (e) {}
+      var dark = theme === 'dark' || (theme !== 'light' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    })();
+  </script>
 </head>
 <body>
   <app-root></app-root>

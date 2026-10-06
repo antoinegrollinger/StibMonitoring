@@ -10,6 +10,7 @@ public class StibClientConfig {
 
     static final String PARTNER_KEY_HEADER = "bmc-partner-key";
 
+    @SuppressWarnings("null")
     @Bean
     RestClient stibRestClient(RestClient.Builder builder, StibProperties properties) {
         if (!StringUtils.hasText(properties.token())) {

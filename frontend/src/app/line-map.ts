@@ -2,7 +2,8 @@ import { AfterViewInit, Component, ElementRef, OnDestroy, effect, inject, input,
 import * as L from 'leaflet';
 import { routeColor } from './colors';
 import { I18n } from './i18n';
-import { LiveLineStops, LiveStop, StopRef } from './stib.models';
+import { ThemeSettings } from './theme';
+import { LiveLineStops, LiveStop, StopRef, directionKey } from './stib.models';
 
 const BRUSSELS: L.LatLngTuple = [50.8466, 4.3528];
 
@@ -21,6 +22,8 @@ const COMPACT_THRESHOLD = 3;
 })
 export class LineMap implements AfterViewInit, OnDestroy {
   readonly directions = input.required<LiveLineStops[]>();
+  /** Directions (`line/direction`) not drawn; they still count for colours and framing. */
+  readonly hiddenDirections = input<ReadonlySet<string>>(new Set());
   /** Changes whenever the map should re-frame the lines (i.e. a different set of lines was loaded). */
   readonly fitKey = input<string | null>(null);
   /** Lines shown, in display order; decides each line's colour. */
@@ -29,6 +32,7 @@ export class LineMap implements AfterViewInit, OnDestroy {
   readonly stopSelected = output<StopRef>();
 
   private readonly i18n = inject(I18n);
+  private readonly theme = inject(ThemeSettings);
   private readonly container = viewChild.required<ElementRef<HTMLElement>>('map');
   private map?: L.Map;
   /** Routes and stops: only rebuilt when the lines, the selection or the language change. */
@@ -62,10 +66,12 @@ export class LineMap implements AfterViewInit, OnDestroy {
   private render(): void {
     // Read every input up front so the effect tracks them even before the map exists.
     const directions = this.directions();
+    const hidden = this.hiddenDirections();
     const fitKey = this.fitKey();
     const lineIds = this.lineIds();
     const selected = this.selectedStop();
     const lang = this.i18n.lang();
+    const dark = this.theme.dark();
     if (!this.map) {
       return;
     }
@@ -77,7 +83,7 @@ export class LineMap implements AfterViewInit, OnDestroy {
 
     const routeKey = [
       directions.map(d => `${d.lineId}/${d.direction}/${d.stops.length}`).join(','),
-      lineIds.join(','), selected?.lineId, selected?.stopId, lang,
+      lineIds.join(','), selected?.lineId, selected?.stopId, lang, dark, [...hidden].join(','),
     ].join('|');
     let selectedPosition: L.LatLngTuple | null = null;
 
@@ -85,6 +91,9 @@ export class LineMap implements AfterViewInit, OnDestroy {
       this.routeKey = routeKey;
       this.routeLayer.clearLayers();
       directions.forEach((direction, i) => {
+        if (hidden.has(directionKey(direction))) {
+          return;
+        }
         const color = colorOf(direction, directionIndex[i]);
         const stops = direction.stops.filter(hasLocation);
         L.polyline(stops.map(s => [s.latitude, s.longitude] as L.LatLngTuple), {
@@ -97,7 +106,7 @@ export class LineMap implements AfterViewInit, OnDestroy {
             radius: isSelected ? 9 : compact ? 3 : 5,
             color,
             weight: isSelected ? 4 : compact ? 1.5 : 2,
-            fillColor: isSelected ? color : '#fff',
+            fillColor: isSelected ? color : dark ? '#161b22' : '#fff',
             fillOpacity: 1,
           })
             .bindTooltip(this.stopLabel(stop, direction))
@@ -116,12 +125,13 @@ export class LineMap implements AfterViewInit, OnDestroy {
     directions.forEach((direction, i) => {
       const color = colorOf(direction, directionIndex[i]);
       const stops = direction.stops.filter(hasLocation);
+      const isHidden = hidden.has(directionKey(direction));
       stops.forEach((stop, s) => {
         bounds.extend([stop.latitude, stop.longitude]);
         if (selected?.lineId === direction.lineId && selected.stopId === stop.id) {
           selectedPosition = [stop.latitude, stop.longitude];
         }
-        if (!stop.vehiclePresent) {
+        if (!stop.vehiclePresent || isHidden) {
           return;
         }
         // Point the arrow along the route: towards the next stop, or away from the previous one at the terminus.

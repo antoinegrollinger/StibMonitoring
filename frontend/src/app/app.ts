@@ -7,7 +7,8 @@ import { LineMap } from './line-map';
 import { LineSelection } from './line-selection';
 import { I18n, LANGUAGES, Lang, Translatable } from './i18n';
 import { RefreshSettings } from './refresh';
-import { LineMessage, LiveLineStops, StopRef, WaitingTime } from './stib.models';
+import { ThemeSettings } from './theme';
+import { LineMessage, LiveLineStops, StopRef, WaitingTime, directionKey } from './stib.models';
 import { StibService } from './stib.service';
 import { WaitingTimes } from './waiting-times';
 
@@ -35,6 +36,12 @@ export class App {
   protected readonly languages = LANGUAGES;
   protected readonly refresh = inject(RefreshSettings);
   protected readonly lines = inject(LineSelection);
+  protected readonly theme = inject(ThemeSettings);
+  protected readonly themeOptions = [
+    { theme: 'system', icon: '◐', label: 'theme.system' },
+    { theme: 'light', icon: '☀', label: 'theme.light' },
+    { theme: 'dark', icon: '☾', label: 'theme.dark' },
+  ] as const;
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
 
@@ -54,6 +61,16 @@ export class App {
   protected readonly messagesExpanded = signal(false);
   /** Line groups the user expanded in the sidebar (only used when several lines are shown). */
   protected readonly expandedLines = signal<ReadonlySet<string>>(new Set());
+  /** Per line, the only direction shown on the map; lines not in here show all their directions. */
+  protected readonly soloDirections = signal<ReadonlyMap<string, string>>(new Map());
+  /** Directions (`line/direction`) hidden from the map because another direction of their line is shown alone. */
+  protected readonly hiddenDirections = computed(() => {
+    const solo = this.soloDirections();
+    return new Set(this.directions().map(directionKey)
+      .filter(key => { const only = solo.get(key.split('/')[0]); return only !== undefined && only !== key; }));
+  });
+  /** Directions (`line/direction`) the user expanded in the sidebar; directions start collapsed. */
+  protected readonly expandedDirections = signal<ReadonlySet<string>>(new Set());
 
   protected readonly singleLine = computed(() => this.lines.lineIds().length === 1);
 
@@ -193,6 +210,21 @@ export class App {
     this.lines.toggleAll();
   }
 
+  protected clearLines(): void {
+    this.lineInputError.set(null);
+    this.lines.clear();
+  }
+
+  /** Adds a line as soon as it is picked from the suggestions, without pressing "Add". */
+  protected onLineInput(event: Event, input: HTMLInputElement): void {
+    // Picking a datalist option fires a plain Event (Chrome) or an "insertReplacementText" InputEvent
+    // (Firefox, Safari); typing fires ordinary InputEvents, so "1" isn't added while typing "12".
+    const picked = !(event instanceof InputEvent) || event.inputType === 'insertReplacementText';
+    if (picked && this.lines.allLineIds().includes(input.value.trim().toUpperCase())) {
+      this.addLines(input);
+    }
+  }
+
   protected addLines(input: HTMLInputElement): void {
     const unknown = this.lines.add(input.value);
     this.lineInputError.set(unknown.length ? { key: 'lines.unknown', params: { lines: unknown.join(', ') } } : null);
@@ -215,6 +247,40 @@ export class App {
 
   protected setAllExpanded(expanded: boolean): void {
     this.expandedLines.set(new Set(expanded ? this.groups().map(g => g.lineId) : []));
+    this.expandedDirections.set(new Set(expanded ? this.directions().map(directionKey) : []));
+  }
+
+  protected isDirectionExpanded(direction: LiveLineStops): boolean {
+    return this.expandedDirections().has(directionKey(direction));
+  }
+
+  protected isDirectionShown(direction: LiveLineStops): boolean {
+    return !this.hiddenDirections().has(directionKey(direction));
+  }
+
+  /** Shows only this direction of its line on the map, or all of them again if it already was. */
+  protected toggleSoloDirection(direction: LiveLineStops): void {
+    const key = directionKey(direction);
+    this.soloDirections.update(solo => {
+      const next = new Map(solo);
+      if (next.get(direction.lineId) === key) {
+        next.delete(direction.lineId);
+      } else {
+        next.set(direction.lineId, key);
+      }
+      return next;
+    });
+  }
+
+  protected toggleDirection(direction: LiveLineStops): void {
+    const key = directionKey(direction);
+    this.expandedDirections.update(expanded => {
+      const next = new Set(expanded);
+      if (!next.delete(key)) {
+        next.add(key);
+      }
+      return next;
+    });
   }
 
   protected setLanguage(lang: Lang): void {
@@ -231,6 +297,10 @@ export class App {
     this.selectedStop.set(ref);
     if (ref && !this.isExpanded(ref.lineId)) {
       this.toggleLine(ref.lineId);
+    }
+    const direction = this.selection()?.direction;
+    if (direction && !this.isDirectionExpanded(direction)) {
+      this.toggleDirection(direction);
     }
     // Stops picked on the map may be out of view in the sidebar.
     afterNextRender(
