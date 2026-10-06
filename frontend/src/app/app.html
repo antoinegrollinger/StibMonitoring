@@ -1,0 +1,162 @@
+<header class="toolbar">
+  <h1>{{ i18n.t('app.title') }}</h1>
+
+  <form class="line-picker" (submit)="$event.preventDefault(); addLines(lineInput)">
+    <span class="label" id="lines-label">{{ i18n.t('lines.label') }}</span>
+    @if (lines.showAll()) {
+      <span class="chip all">{{ i18n.t('lines.allCount', { count: lines.allLineIds().length }) }}</span>
+    } @else {
+      @for (lineId of lines.picked(); track lineId) {
+        <span class="chip" [style.--line-color]="lineColor(lineId)">
+          {{ lineId }}
+          <button type="button" [attr.aria-label]="i18n.t('lines.remove', { line: lineId })"
+                  (click)="lines.remove(lineId)">×</button>
+        </span>
+      }
+    }
+    <input #lineInput list="all-lines" autocomplete="off" aria-labelledby="lines-label"
+           [placeholder]="i18n.t('lines.placeholder')" />
+    <datalist id="all-lines">
+      @for (lineId of lines.allLineIds(); track lineId) {
+        <option [value]="lineId"></option>
+      }
+    </datalist>
+    <button type="submit" class="primary">{{ i18n.t('lines.add') }}</button>
+    <button type="button" class="toggle" [class.active]="lines.showAll()" [attr.aria-pressed]="lines.showAll()"
+            (click)="toggleAllLines()">{{ i18n.t('lines.all') }}</button>
+    @if (lineInputError(); as message) {
+      <span class="input-error" role="alert">{{ i18n.translate(message) }}</span>
+    }
+  </form>
+
+  <span class="status">
+    @if (loading()) {
+      {{ i18n.t('status.refreshing') }}
+    } @else if (lastUpdated(); as updated) {
+      {{ i18n.plural('status.summary', vehicleCount(), { time: i18n.time(updated) }) }}
+    }
+  </span>
+  <div class="refresh">
+    <label for="refresh-interval">{{ i18n.t('refresh.label') }}</label>
+    <select id="refresh-interval" (change)="refresh.set(+$any($event.target).value)">
+      @for (seconds of refresh.options(); track seconds) {
+        <option [value]="seconds" [selected]="seconds === refresh.intervalSeconds()">
+          {{ seconds === 0 ? i18n.t('refresh.off') : i18n.t('refresh.seconds', { seconds }) }}
+        </option>
+      }
+    </select>
+    <button type="button" class="refresh-now" [title]="i18n.t('refresh.now')" [attr.aria-label]="i18n.t('refresh.now')"
+            (click)="refresh.refreshNow()">↻</button>
+  </div>
+  <div class="languages" role="group" [attr.aria-label]="i18n.t('app.language')">
+    @for (lang of languages; track lang) {
+      <button type="button" [class.active]="lang === i18n.lang()" [attr.aria-pressed]="lang === i18n.lang()"
+              [attr.lang]="lang" (click)="setLanguage(lang)">{{ lang.toUpperCase() }}</button>
+    }
+  </div>
+</header>
+
+@if (error(); as message) {
+  <div class="error" role="alert">{{ i18n.translate(message) }}</div>
+}
+
+@if (messages().length) {
+  <section class="messages" [attr.aria-label]="i18n.t('messages.region')">
+    <button type="button" class="messages-toggle" [attr.aria-expanded]="messagesExpanded()"
+            (click)="messagesExpanded.set(!messagesExpanded())">
+      <span aria-hidden="true">⚠</span>
+      {{ i18n.plural('messages.count', messages().length) }}
+      <span class="chevron" aria-hidden="true">{{ messagesExpanded() ? '▴' : '▾' }}</span>
+    </button>
+    @if (messagesExpanded()) {
+      <ul>
+        @for (message of messages(); track message.id) {
+          <li>
+            @for (lineId of message.lineIds; track lineId) {
+              <span class="badge" [style.background]="lineColor(lineId)">{{ lineId }}</span>
+            }
+            {{ i18n.text(message.text) }}
+          </li>
+        }
+      </ul>
+    }
+  </section>
+}
+
+<main class="layout">
+  <aside class="sidebar">
+    @if (groups().length > 1) {
+      <div class="sidebar-actions">
+        <button type="button" (click)="setAllExpanded(true)">{{ i18n.t('sidebar.expandAll') }}</button>
+        <button type="button" (click)="setAllExpanded(false)">{{ i18n.t('sidebar.collapseAll') }}</button>
+      </div>
+    }
+    @for (group of groups(); track group.lineId) {
+      <section class="line-group">
+        @if (!singleLine()) {
+          <button type="button" class="line-header" [attr.aria-expanded]="isExpanded(group.lineId)"
+                  (click)="toggleLine(group.lineId)">
+            <span class="badge" [style.background]="lineColor(group.lineId)">{{ group.lineId }}</span>
+            <span class="line-summary">
+              {{ i18n.plural('sidebar.vehicles', group.vehicleCount) }}
+              @if (group.messageCount) {
+                <span class="warning" [title]="i18n.plural('messages.count', group.messageCount)">⚠ {{ group.messageCount }}</span>
+              }
+            </span>
+            <span class="chevron" aria-hidden="true">{{ isExpanded(group.lineId) ? '▴' : '▾' }}</span>
+          </button>
+        }
+        @if (isExpanded(group.lineId)) {
+          @for (direction of group.directions; track direction.direction; let i = $index) {
+            <div class="direction">
+              <h2>
+                <span class="swatch" [style.background]="colorOf(group.lineId, i)"></span>
+                → {{ i18n.name(direction.destination) ?? direction.direction }}
+              </h2>
+              <ol class="stops">
+                @for (stop of direction.stops; track stop.id) {
+                  <li>
+                    <button type="button"
+                            [class.occupied]="stop.vehiclePresent"
+                            [class.selected]="isSelected(group.lineId, stop.id)"
+                            [attr.aria-pressed]="isSelected(group.lineId, stop.id)"
+                            (click)="selectStop({ lineId: group.lineId, stopId: stop.id })">
+                      <span class="dot" [style.border-color]="colorOf(group.lineId, i)"
+                            [style.background]="stop.vehiclePresent ? colorOf(group.lineId, i) : '#fff'"></span>
+                      {{ i18n.name(stop.name) ?? stop.id }}
+                      @if (stopsWithMessages().has(group.lineId + ':' + stop.id)) {
+                        <span class="warning" [title]="i18n.t('messages.stopFlag')">⚠</span>
+                      }
+                    </button>
+                  </li>
+                }
+              </ol>
+            </div>
+          }
+        }
+      </section>
+    } @empty {
+      @if (!error()) {
+        <p class="empty">{{ lines.lineIds().length ? i18n.t('sidebar.loading') : i18n.t('sidebar.empty') }}</p>
+      }
+    }
+  </aside>
+  <div class="map-area">
+    <app-line-map class="map"
+                  [directions]="directions()"
+                  [fitKey]="loadedKey()"
+                  [lineIds]="lines.lineIds()"
+                  [selectedStop]="selectedStop()"
+                  (stopSelected)="selectStop($event)" />
+    @if (selection(); as selected) {
+      <app-waiting-times class="waiting-times"
+                         [stop]="selected.stop"
+                         [direction]="selected.direction"
+                         [times]="waitingTimes()"
+                         [error]="waitingTimesError()"
+                         [now]="now()"
+                         [messages]="selectedStopMessages()"
+                         (closed)="selectStop(null)" />
+    }
+  </div>
+</main>

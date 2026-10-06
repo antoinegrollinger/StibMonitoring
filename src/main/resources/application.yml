@@ -1,0 +1,22 @@
+server:
+  port: 8080
+  # Responses for many lines at once (e.g. all lines) are large but compress well.
+  compression:
+    enabled: true
+    mime-types: application/json
+    min-response-size: 2KB
+
+stib:
+  base-url: https://api-management-opendata-production.azure-api.net/api/datasets/stibmivb
+  # Read from the STIB-TOKEN env variable (falls back to STIB_TOKEN, since
+  # hyphenated names cannot be exported from most shells).
+  token: ${STIB-TOKEN:${STIB_TOKEN:}}
+  cache:
+    # Traveller information (disruption messages) is fetched in one call and reused for this long.
+    messages-ttl: 5m
+    # stopsByLine and StopDetails are static datasets.
+    static-ttl: 1h
+
+frontend:
+  # Default auto-refresh interval of the live view (0s disables it). Users can override it in the UI.
+  refresh-interval: 15s
